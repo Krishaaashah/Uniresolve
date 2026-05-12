@@ -1,6 +1,5 @@
 # UniResolve 🏦
-### Gen-AI Powered Unified Complaint Intelligence
-**PSBs Hackathon 2026 — IDEA 2.0 | Team: Checkmates**
+
 
 ---
 
