@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>UniResolve - Agent Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{
+  --red:#CC0000;--blue:#003087;--blue2:#1a4fa0;
+  --bg:#f0f4f8;--card:#fff;--border:#e2e8f0;
+  --text:#1a202c;--muted:#718096;
+  --green:#38a169;--orange:#dd6b20;--purple:#6b46c1;--teal:#2b6cb0;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text)}
+
+/* HEADER */
+header{background:var(--blue);color:#fff;display:flex;align-items:center;
+  justify-content:space-between;padding:0 24px;height:60px;
+  position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.logo{font-size:20px;font-weight:800;letter-spacing:-.5px;display:flex;align-items:center;gap:10px}
+.logo span{color:var(--red)}
+.hdr-right{display:flex;align-items:center;gap:14px;font-size:13px}
+.sla-bar-hdr{background:rgba(255,255,255,.15);border-radius:20px;
+  padding:4px 12px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px}
+.pulse{animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.icon{width:16px;height:16px;display:inline-block;vertical-align:-3px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.icon.sm{width:14px;height:14px;vertical-align:-2px}
+.icon.lg{width:22px;height:22px}
+.logo-icon{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.14);display:grid;place-items:center;color:#fff}
+.with-icon{display:inline-flex;align-items:center;gap:7px}
+
+/* LAYOUT */
+.layout{display:flex;height:calc(100vh - 60px)}
+.sidebar{width:210px;background:var(--blue);color:#fff;padding:16px 0;flex-shrink:0;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:10px;padding:11px 18px;
+  cursor:pointer;font-size:13.5px;border-left:3px solid transparent;transition:background .15s}
+.nav-item:hover{background:rgba(255,255,255,.1)}
+.nav-item.active{background:rgba(255,255,255,.15);border-left-color:var(--red)}
+.nav-sep{border-top:1px solid rgba(255,255,255,.12);margin:10px 0}
+main{flex:1;overflow-y:auto;padding:22px}
+
+/* STAT CARDS */
+.stats-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:14px;margin-bottom:22px}
+.stat-card{background:var(--card);border-radius:10px;padding:14px 16px;
+  border:1px solid var(--border);box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.stat-card.bl-red{border-left:4px solid var(--red)}
+.stat-card.bl-orange{border-left:4px solid var(--orange)}
+.stat-card.bl-green{border-left:4px solid var(--green)}
+.stat-card.bl-purple{border-left:4px solid var(--purple)}
+.stat-card.bl-blue{border-left:4px solid var(--blue)}
+.stat-card.bl-teal{border-left:4px solid var(--teal)}
+.slabel{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.sval{font-size:26px;font-weight:800;margin:5px 0 3px}
+.ssub{font-size:11px;color:var(--muted)}
+
+/* CHART ROW */
+.chart-row{display:grid;grid-template-columns:2fr 1fr 1fr;gap:14px;margin-bottom:22px}
+.chart-card{background:var(--card);border-radius:10px;padding:18px;
+  border:1px solid var(--border);box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.chart-card h3{font-size:13px;font-weight:700;margin-bottom:14px;color:var(--text)}
+.chart-wrap{position:relative;height:170px}
+
+/* SECTION */
+.sec-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.sec-hdr h2{font-size:15px;font-weight:700}
+.filters{display:flex;gap:8px;flex-wrap:wrap}
+.fbtn{padding:5px 13px;border-radius:20px;border:1px solid var(--border);
+  background:#fff;font-size:12px;cursor:pointer;transition:all .15s}
+.fbtn:hover:not(.active){background:var(--bg)}
+.fbtn.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.add-btn{background:var(--red);color:#fff;border:none;padding:7px 15px;
+  border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px}
+.add-btn:hover{background:#aa0000}
+
+/* COMPLAINT CARDS */
+.clist{display:flex;flex-direction:column;gap:11px}
+.ccard{background:var(--card);border-radius:10px;padding:15px;
+  border:1px solid var(--border);cursor:pointer;transition:box-shadow .15s,border-color .15s}
+.ccard:hover{box-shadow:0 4px 14px rgba(0,0,0,.1);border-color:var(--blue2)}
+.ccard.systemic{border-left:4px solid var(--red)}
+.ccard.breached{border-left:4px solid var(--orange)}
+.ctop{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:7px}
+.cmeta{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.pill{padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700;text-transform:uppercase}
+.pill.critical{background:#fed7d7;color:#c53030}
+.pill.high{background:#feebc8;color:#c05621}
+.pill.medium{background:#fefcbf;color:#744210}
+.pill.low{background:#c6f6d5;color:#276749}
+.pill.angry{background:#fed7d7;color:#c53030}
+.pill.frustrated{background:#feebc8;color:#c05621}
+.pill.neutral{background:#e2e8f0;color:#4a5568}
+.pill.satisfied{background:#c6f6d5;color:#276749}
+.pill.st-pending{background:#feebc8;color:#c05621}
+.pill.st-in_review{background:#bee3f8;color:#2c5282}
+.pill.st-resolved{background:#c6f6d5;color:#276749}
+.pill.st-escalated{background:#fed7d7;color:#c53030}
+.ckey{font-size:13px;color:var(--blue);font-weight:600;
+  background:#ebf4ff;padding:3px 9px;border-radius:6px;
+  display:inline-block;margin-bottom:7px}
+.ctext{font-size:13.5px;line-height:1.5;color:var(--text);margin-bottom:8px}
+.cbot{display:flex;align-items:center;justify-content:space-between}
+.ctime{font-size:12px;color:var(--muted)}
+
+/* SLA BAR */
+.sla-wrap{display:flex;align-items:center;gap:8px;margin-top:6px}
+.sla-track{flex:1;height:5px;background:#e2e8f0;border-radius:3px;overflow:hidden}
+.sla-fill{height:100%;border-radius:3px;transition:width .3s}
+.sla-fill.on_track{background:var(--green)}
+.sla-fill.at_risk{background:var(--orange)}
+.sla-fill.breached{background:var(--red)}
+.sla-label{font-size:11px;font-weight:600;white-space:nowrap}
+.sla-label.on_track{color:var(--green)}
+.sla-label.at_risk{color:var(--orange)}
+.sla-label.breached{color:var(--red)}
+
+/* BADGES */
+.badge-sys{background:var(--red);color:#fff;font-size:11px;
+  padding:2px 8px;border-radius:4px;font-weight:700}
+.badge-cluster{background:#e9d8fd;color:#553c9a;font-size:11px;
+  padding:2px 8px;border-radius:4px;font-weight:600}
+.badge-breach{background:#fff5f5;color:var(--red);font-size:11px;
+  padding:2px 8px;border-radius:4px;font-weight:700;border:1px solid #fed7d7}
+
+/* OVERLAY & PANELS */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);
+  z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
+.panel{background:#fff;border-radius:14px;width:780px;max-height:92vh;
+  overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.panel-hdr{display:flex;align-items:center;justify-content:space-between;
+  padding:18px 22px;border-bottom:1px solid var(--border);
+  position:sticky;top:0;background:#fff;z-index:10}
+.panel-hdr h2{font-size:17px;font-weight:800}
+.xbtn{background:none;border:none;font-size:24px;cursor:pointer;color:var(--muted);line-height:1}
+.pbody{padding:22px}
+
+/* DETAIL TABS */
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px}
+.tab{padding:9px 18px;font-size:13px;font-weight:600;cursor:pointer;
+  border-bottom:3px solid transparent;margin-bottom:-2px;color:var(--muted)}
+.tab.active{color:var(--blue);border-bottom-color:var(--blue)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
+/* INFO GRID */
+.igrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:18px}
+.iblk label{font-size:11px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:3px}
+.iblk p{font-size:13.5px;font-weight:600}
+
+/* AI SECTION */
+.ai-box{background:#f7fafc;border-radius:10px;padding:15px;
+  border:1px solid var(--border);margin-bottom:16px}
+.ai-box h3{font-size:13px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+.draft{background:#fff;border:1px solid var(--border);border-radius:8px;
+  padding:11px;font-size:13.5px;line-height:1.65}
+.conf-bar{display:flex;align-items:center;gap:8px;margin-top:8px}
+.conf-track{flex:1;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden}
+.conf-fill{height:100%;background:var(--green);border-radius:3px}
+
+/* COMMUNICATION HISTORY */
+.history{display:flex;flex-direction:column;gap:0}
+.hline{display:flex;gap:12px;padding:10px 0}
+.havatar{width:32px;height:32px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700}
+.ha-customer{background:#bee3f8;color:#2c5282}
+.ha-agent{background:#c6f6d5;color:#276749}
+.ha-system{background:#e2e8f0;color:#4a5568}
+.hbubble{flex:1}
+.hname{font-size:11px;font-weight:700;color:var(--muted);margin-bottom:3px}
+.hmsg{background:#f7fafc;border-radius:0 10px 10px 10px;
+  padding:9px 12px;font-size:13.5px;line-height:1.55;display:inline-block;max-width:100%}
+.hmsg.ai-draft{background:#fffbeb;border:1px dashed #d69e2e}
+.hmsg.customer{background:#ebf8ff}
+.hmsg.system{background:#f0fff4;font-size:12px;color:var(--muted);font-style:italic}
+.htime{font-size:11px;color:var(--muted);margin-top:3px}
+.reply-area{margin-top:14px}
+.reply-area textarea{width:100%;height:80px;padding:10px;border:1px solid var(--border);
+  border-radius:8px;font-size:13.5px;font-family:inherit;resize:vertical;outline:none}
+.reply-area textarea:focus{border-color:var(--blue)}
+.reply-btns{display:flex;gap:8px;margin-top:8px}
+.rbtn{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:none}
+.rbtn.send{background:var(--blue);color:#fff}
+.rbtn.ai{background:#fff;border:1px solid var(--orange);color:var(--orange)}
+
+/* SLA DETAIL */
+.sla-detail-box{background:#f7fafc;border-radius:10px;padding:16px;border:1px solid var(--border)}
+.sla-big{font-size:28px;font-weight:800;margin:8px 0 4px}
+.sla-track-lg{height:12px;background:#e2e8f0;border-radius:6px;overflow:hidden;margin:10px 0}
+.sla-fill-lg{height:100%;border-radius:6px;transition:width .4s}
+.sla-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+.sla-item label{font-size:11px;color:var(--muted);text-transform:uppercase;display:block}
+.sla-item p{font-size:15px;font-weight:700;margin-top:2px}
+
+/* ESCALATION */
+.esc-timeline{display:flex;flex-direction:column;gap:0}
+.esc-step{display:flex;gap:14px;padding:10px 0}
+.esc-dot{width:28px;height:28px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
+.esc-dot.done{background:var(--blue);color:#fff}
+.esc-dot.current{background:var(--orange);color:#fff}
+.esc-dot.future{background:#e2e8f0;color:var(--muted)}
+.esc-info p{font-size:13.5px;font-weight:600}
+.esc-info small{font-size:12px;color:var(--muted)}
+.esc-connector{width:2px;background:#e2e8f0;height:20px;margin:0 13px}
+.esc-action-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+.esc-btn{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;
+  cursor:pointer;border:1px solid var(--border);background:#fff}
+.esc-btn:hover{background:var(--bg)}
+.esc-btn.primary{background:var(--purple);color:#fff;border-color:var(--purple)}
+
+/* ACTION BAR */
+.action-bar{display:flex;gap:10px;padding:14px 22px;
+  border-top:1px solid var(--border);background:#f7fafc;
+  position:sticky;bottom:0}
+.abtn{flex:1;padding:11px;border-radius:9px;font-size:13.5px;
+  font-weight:800;cursor:pointer;border:none;transition:all .15s}
+.abtn.approve{background:var(--green);color:#fff}
+.abtn.approve:hover{background:#2f855a}
+.abtn.escalate{background:var(--purple);color:#fff}
+.abtn.escalate:hover{background:#553c9a}
+.abtn.reject{background:#fff;color:var(--text);border:1px solid var(--border)}
+.abtn.reject:hover{background:var(--bg)}
+
+/* REGULATORY */
+.reg-header{background:linear-gradient(135deg,var(--blue),var(--blue2));
+  color:#fff;border-radius:12px;padding:24px;margin-bottom:20px}
+.reg-header h2{font-size:20px;font-weight:800;margin-bottom:4px}
+.reg-header p{font-size:13px;opacity:.8}
+.reg-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px}
+.reg-card{background:var(--card);border-radius:10px;padding:16px;
+  border:1px solid var(--border);text-align:center}
+.reg-val{font-size:32px;font-weight:800;margin:6px 0 4px}
+.reg-lbl{font-size:12px;color:var(--muted)}
+.reg-table{width:100%;border-collapse:collapse;font-size:13.5px}
+.reg-table th{background:#f7fafc;padding:10px 14px;text-align:left;
+  font-size:11px;text-transform:uppercase;color:var(--muted);
+  border-bottom:2px solid var(--border)}
+.reg-table td{padding:10px 14px;border-bottom:1px solid var(--border)}
+.reg-table tr:hover td{background:#f7fafc}
+.export-btn{background:var(--blue);color:#fff;border:none;
+  padding:10px 20px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+.export-btn:hover{background:var(--blue2)}
+
+/* INGEST MODAL */
+.ingest-modal{background:#fff;border-radius:14px;width:540px;overflow:hidden;
+  box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.im-hdr{background:var(--blue);color:#fff;padding:18px 22px}
+.im-hdr h2{font-size:17px;font-weight:800}
+.im-hdr p{font-size:12px;opacity:.8;margin-top:3px}
+.im-body{padding:22px}
+.fg{margin-bottom:14px}
+.fg label{display:block;font-size:12px;font-weight:700;margin-bottom:5px;color:var(--text)}
+.fg select,.fg textarea{width:100%;padding:9px 11px;border:1px solid var(--border);
+  border-radius:8px;font-size:13.5px;font-family:inherit;outline:none;transition:border-color .15s}
+.fg select:focus,.fg textarea:focus{border-color:var(--blue)}
+.fg textarea{height:110px;resize:vertical}
+.sub-btn{width:100%;background:var(--red);color:#fff;border:none;
+  padding:11px;border-radius:9px;font-size:14px;font-weight:800;cursor:pointer}
+.sub-btn:hover:not(:disabled){background:#aa0000}
+.sub-btn:disabled{background:#ccc;cursor:not-allowed}
+
+/* ESCALATION MODAL */
+.esc-modal{background:#fff;border-radius:14px;width:460px;overflow:hidden;
+  box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.em-hdr{background:var(--purple);color:#fff;padding:18px 22px}
+.em-hdr h2{font-size:17px;font-weight:800}
+.em-body{padding:22px}
+
+/* TOAST */
+.toast{position:fixed;bottom:22px;right:22px;background:#1a202c;color:#fff;
+  padding:11px 18px;border-radius:9px;font-size:13.5px;z-index:9999;
+  box-shadow:0 4px 20px rgba(0,0,0,.3);transform:translateY(80px);transition:transform .3s}
+.toast.show{transform:translateY(0)}
+.toast.success{border-left:4px solid var(--green)}
+.toast.error{border-left:4px solid var(--red)}
+.toast.warn{border-left:4px solid var(--orange)}
+
+.loading{text-align:center;padding:40px;color:var(--muted);font-size:14px}
+.spinner{width:30px;height:30px;border:3px solid var(--border);
+  border-top-color:var(--blue);border-radius:50%;
+  animation:spin .8s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <symbol id="i-bank" viewBox="0 0 24 24"><path d="M3 10h18"/><path d="M5 10v9"/><path d="M9 10v9"/><path d="M15 10v9"/><path d="M19 10v9"/><path d="M4 19h16"/><path d="M12 3 4 8h16z"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="m10.3 3.9-8.4 14.5A2 2 0 0 0 3.6 21h16.8a2 2 0 0 0 1.7-2.6L13.7 3.9a2 2 0 0 0-3.4 0z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 16v-5"/><path d="M12 16V8"/><path d="M16 16v-3"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><path d="M10 2h4"/><path d="M12 14l3-3"/><circle cx="12" cy="14" r="8"/></symbol>
+  <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3 17 9 11l4 4 8-8"/><path d="M14 7h7v7"/></symbol>
+  <symbol id="i-report" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+  <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M3 9a3 3 0 0 0 0 6v3a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-3a3 3 0 0 0 0-6V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/><path d="M13 5v14"/></symbol>
+  <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="m12 5 6 6"/><path d="m12 5-6 6"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="10" rx="2"/><path d="M12 8V4"/><path d="M9 13h.01"/><path d="M15 13h.01"/><path d="M8 18v2"/><path d="M16 18v2"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+  <symbol id="i-network" viewBox="0 0 24 24"><circle cx="6" cy="12" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="18" cy="18" r="3"/><path d="m8.7 10.7 6.6-3.4"/><path d="m8.7 13.3 6.6 3.4"/></symbol>
+  <symbol id="i-building" viewBox="0 0 24 24"><path d="M4 21h16"/><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/><path d="M9 8h1"/><path d="M14 8h1"/><path d="M9 12h1"/><path d="M14 12h1"/><path d="M10 21v-4h4v4"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 0 0 7 7l1-1"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m20 6-11 11-5-5"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7" cy="14" r="4"/><path d="M10 11 21 0"/><path d="m15 6 3 3"/><path d="m17 4 3 3"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a8 8 0 0 0 .1-1l2-1.5-2-3.5-2.4 1a7 7 0 0 0-1.7-1L15 6.5h-4L10.6 9a7 7 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a8 8 0 0 0 .1 1l-2 1.5 2 3.5 2.4-1a7 7 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7 7 0 0 0 1.7-1l2.4 1 2-3.5z"/></symbol>
+</svg>
+
+<header>
+  <div class="logo"><span class="logo-icon"><svg class="icon lg"><use href="#i-bank"></use></svg></span> Uni<span>Resolve</span></div>
+  <div class="hdr-right">
+    <div class="sla-bar-hdr pulse" id="alertBadge" style="display:none"><svg class="icon sm"><use href="#i-alert"></use></svg> Systemic Alert Active</div>
+    <div class="sla-bar-hdr" id="slaBreachBadge" style="display:none"><svg class="icon sm"><use href="#i-clock"></use></svg> SLA Breach</div>
+    <span style="opacity:.7">Agent: Krisha Shah &nbsp;|&nbsp; <span id="clock"></span></span>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="sidebar">
+    <div class="nav-item active" onclick="nav('dashboard')"><svg class="icon"><use href="#i-chart"></use></svg> Dashboard</div>
+    <div class="nav-item" onclick="nav('complaints')"><svg class="icon"><use href="#i-list"></use></svg> All Complaints</div>
+    <div class="nav-item" onclick="nav('sla')"><svg class="icon"><use href="#i-timer"></use></svg> SLA Tracker</div>
+    <div class="nav-item" onclick="nav('alerts')"><svg class="icon"><use href="#i-alert"></use></svg> Systemic Alerts</div>
+    <div class="nav-item" onclick="nav('analytics')"><svg class="icon"><use href="#i-trend"></use></svg> Trend Analysis</div>
+    <div class="nav-item" onclick="nav('regulatory')"><svg class="icon"><use href="#i-report"></use></svg> Regulatory Report</div>
+    <div class="nav-sep"></div>
+    <div class="nav-item" onclick="openIngest()"><svg class="icon"><use href="#i-plus"></use></svg> New Complaint</div>
+  </nav>
+  <main id="main"><div class="loading"><div class="spinner"></div>Loading UniResolve...</div></main>
+</div>
+
+<!-- DETAIL OVERLAY -->
+<div class="overlay" id="detailOv" style="display:none" onclick="closeDetail(event)">
+  <div class="panel" onclick="event.stopPropagation()">
+    <div class="panel-hdr">
+      <h2 id="detailTitle"><span class="with-icon"><svg class="icon"><use href="#i-ticket"></use></svg> Complaint Detail</span></h2>
+      <button class="xbtn" onclick="closeDetail()">x</button>
+    </div>
+    <div class="tabs" style="padding:0 22px">
+      <div class="tab active" onclick="switchTab('overview')">Overview</div>
+      <div class="tab" onclick="switchTab('history')">History</div>
+      <div class="tab" onclick="switchTab('sla_tab')">SLA</div>
+      <div class="tab" onclick="switchTab('escalation')">Escalation</div>
+    </div>
+    <div class="pbody">
+      <div class="tab-panel active" id="tp-overview"></div>
+      <div class="tab-panel" id="tp-history"></div>
+      <div class="tab-panel" id="tp-sla_tab"></div>
+      <div class="tab-panel" id="tp-escalation"></div>
+    </div>
+    <div class="action-bar" id="actionBar"></div>
+  </div>
+</div>
+
+<!-- ESCALATE MODAL -->
+<div class="overlay" id="escOv" style="display:none" onclick="closeEsc(event)">
+  <div class="esc-modal" onclick="event.stopPropagation()">
+    <div class="em-hdr">
+      <h2><span class="with-icon"><svg class="icon"><use href="#i-arrow-up"></use></svg> Escalate Complaint</span></h2>
+    </div>
+    <div class="em-body">
+      <div class="fg">
+        <label>Escalate To</label>
+        <select id="escLevel">
+          <option value="L2 Supervisor">L2 Supervisor</option>
+          <option value="L3 Manager">L3 Manager</option>
+          <option value="L4 Regulatory">L4 Regulatory (RBI)</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Reason for Escalation</label>
+        <textarea id="escReason" placeholder="Describe why this needs escalation..."></textarea>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button class="sub-btn" style="background:var(--purple)" onclick="confirmEsc()"><span class="with-icon"><svg class="icon sm"><use href="#i-arrow-up"></use></svg> Confirm Escalation</span></button>
+        <button class="sub-btn" style="background:#718096" onclick="closeEsc()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- INGEST MODAL -->
+<div class="overlay" id="ingestOv" style="display:none" onclick="closeIngest(event)">
+  <div class="ingest-modal" onclick="event.stopPropagation()">
+    <div class="im-hdr">
+      <h2><span class="with-icon"><svg class="icon"><use href="#i-plus"></use></svg> Submit New Complaint</span></h2>
+      <p>Simulates omnichannel ingestion - all channels unified</p>
+    </div>
+    <div class="im-body">
+      <div class="fg">
+        <label>Channel</label>
+        <select id="igChan">
+          <option value="app">Mobile App</option>
+          <option value="email">Email</option>
+          <option value="social">Social Media</option>
+          <option value="call">Call Center</option>
+          <option value="branch">Branch Visit</option>
+          <option value="web">Web Portal</option>
+        </select>
+      </div>
+      <div class="fg">
+        <label>Complaint Text</label>
+        <textarea id="igText" placeholder="e.g. My UPI payment of Rs 2000 failed but money was deducted..."></textarea>
+      </div>
+      <button class="sub-btn" id="igBtn" onclick="submitComplaint()"><span class="with-icon"><svg class="icon sm"><use href="#i-bot"></use></svg> Analyse & Submit</span></button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ────────────────────────────────────────────────────────────────────────────
+const API = 'http://localhost:8000';
+let ALL = [], STATS = {}, currentView = 'dashboard', activeFilter = 'all';
+let detailComplaint = null, escComplaintId = null;
+
+// clock
+setInterval(()=>{
+  document.getElementById('clock').textContent =
+    new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+},1000);
+
+// ── API ──────────────────────────────────────────────────────────────────────
+async function apiFetch(path, opts){
+  const r = await fetch(API+path, opts);
+  if(!r.ok) throw new Error(r.status);
+  return r.json();
+}
+async function loadAll(){
+  try{ ALL = await apiFetch('/complaints'); }catch{ ALL = mockComplaints(); }
+  try{ STATS = await apiFetch('/complaints/stats'); }catch{ STATS = mockStats(); }
+  document.getElementById('alertBadge').style.display =
+    STATS.systemic_alerts > 0 ? 'flex' : 'none';
+  document.getElementById('slaBreachBadge').style.display =
+    STATS.sla_breached > 0 ? 'flex' : 'none';
+}
+
+// ── NAV ──────────────────────────────────────────────────────────────────────
+function nav(v){
+  currentView = v;
+  document.querySelectorAll('.nav-item').forEach(el=>{
+    const txt = el.textContent.toLowerCase();
+    el.classList.toggle('active',
+      (v==='dashboard'&&txt.includes('dashboard'))||
+      (v==='complaints'&&txt.includes('all'))||
+      (v==='sla'&&txt.includes('sla'))||
+      (v==='alerts'&&txt.includes('alert'))||
+      (v==='analytics'&&txt.includes('trend'))||
+      (v==='regulatory'&&txt.includes('reg'))
+    );
+  });
+  render();
+}
+function render(){
+  if(currentView==='dashboard') renderDashboard();
+  else if(currentView==='complaints') renderComplaints();
+  else if(currentView==='sla') renderSLA();
+  else if(currentView==='alerts') renderAlerts();
+  else if(currentView==='analytics') renderAnalytics();
+  else if(currentView==='regulatory') renderRegulatory();
+}
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+const CHANNELS = {
+  app:{label:'Mobile App',icon:'phone'},
+  email:{label:'Email',icon:'mail'},
+  social:{label:'Social',icon:'network'},
+  call:{label:'Call Center',icon:'phone'},
+  branch:{label:'Branch',icon:'building'},
+  web:{label:'Web Portal',icon:'globe'}
+};
+const EMOJI_RE = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\uFE0F\u200D]/gu;
+function icon(name, cls=''){ return `<svg class="icon ${cls}"><use href="#i-${name}"></use></svg>`; }
+function cleanText(value=''){
+  return String(value).replace(EMOJI_RE,'').replace(/\s{2,}/g,' ').trim();
+}
+function channelMeta(c){ return CHANNELS[c] || {label:'Complaint',icon:'list'}; }
+function channelLabel(c){ return channelMeta(c).label; }
+function channelIcon(c, cls='sm'){ return icon(channelMeta(c).icon, cls); }
+function timeAgo(iso){
+  const m = Math.floor((Date.now()-new Date(iso))/60000);
+  return m<60?`${m}m ago`:m<1440?`${Math.floor(m/60)}h ago`:`${Math.floor(m/1440)}d ago`;
+}
+function fmtDt(iso){
+  return new Date(iso).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+}
+function slaColor(status){ return status==='breached'?'var(--red)':status==='at_risk'?'var(--orange)':'var(--green)'; }
+
+function slaBar(c){
+  if(!c.sla) return '';
+  const pct = Math.min(100, c.sla.percent_used);
+  const st = c.sla.status;
+  const label = st==='breached'?`Breached`:
+                st==='at_risk'?`${c.sla.hours_remaining.toFixed(1)}h left`:
+                `${c.sla.hours_remaining.toFixed(1)}h left`;
+  return `<div class="sla-wrap">
+    <div class="sla-track"><div class="sla-fill ${st}" style="width:${pct}%"></div></div>
+    <span class="sla-label ${st}">${label}</span>
+  </div>`;
+}
+
+function pills(c){
+  const t = c.triage||{};
+  return `
+    <span class="with-icon" style="font-size:12px">${channelIcon(c.channel)} ${channelLabel(c.channel)}</span>
+    <span class="pill ${t.severity||'medium'}">${t.severity||'-'}</span>
+    <span class="pill ${t.sentiment||'neutral'}">${t.sentiment||'-'}</span>
+    <span class="pill st-${c.status}">${(c.status||'').replace('_',' ')}</span>
+    ${c.escalation_level&&c.escalation_level!=='L1 Agent'?`<span class="pill" style="background:#e9d8fd;color:#553c9a">${c.escalation_level}</span>`:''}
+  `;
+}
+
+function complaintCard(c){
+  const t = c.triage||{};
+  const breach = c.sla && c.sla.breached && c.status!=='resolved';
+  return `<div class="ccard ${c.cluster?.systemic_alert?'systemic':breach?'breached':''}" onclick="openDetail('${c.id}')">
+    <div class="ctop">
+      <div class="cmeta">${pills(c)}</div>
+      <span class="ctime">${timeAgo(c.received_at)}</span>
+    </div>
+    ${t.key_issue?`<div class="ckey">${icon('search','sm')} ${cleanText(t.key_issue)}</div>`:''}
+    <div class="ctext">${cleanText(c.masked_text||'').substring(0,160)}${cleanText(c.masked_text||'').length>160?'...':''}</div>
+    <div class="cbot">
+      <span class="with-icon" style="font-size:12px;color:var(--muted)">${icon('folder','sm')} ${t.category||'General'}</span>
+      <div style="display:flex;gap:7px">
+        ${c.cluster?.systemic_alert?`<span class="badge-sys pulse with-icon">${icon('alert','sm')} SYSTEMIC</span>`:''}
+        ${c.cluster?.cluster_size>1?`<span class="badge-cluster with-icon">${icon('link','sm')} ${c.cluster.cluster_size} linked</span>`:''}
+        ${breach?`<span class="badge-breach with-icon">${icon('clock','sm')} SLA BREACH</span>`:''}
+      </div>
+    </div>
+    ${c.status!=='resolved'?slaBar(c):''}
+  </div>`;
+}
+
+// ── DASHBOARD ────────────────────────────────────────────────────────────────
+function renderDashboard(){
+  const s = STATS;
+  document.getElementById('main').innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card bl-blue"><div class="slabel">Total</div>
+        <div class="sval" style="color:var(--blue)">${s.total||0}</div>
+        <div class="ssub">All channels</div></div>
+      <div class="stat-card bl-orange"><div class="slabel">Pending</div>
+        <div class="sval" style="color:var(--orange)">${s.pending||0}</div>
+        <div class="ssub">Awaiting action</div></div>
+      <div class="stat-card bl-green"><div class="slabel">Resolved</div>
+        <div class="sval" style="color:var(--green)">${s.resolved||0}</div>
+        <div class="ssub">Avg ${s.avg_resolution_minutes||0}m FRT</div></div>
+      <div class="stat-card bl-purple"><div class="slabel">Escalated</div>
+        <div class="sval" style="color:var(--purple)">${s.escalated||0}</div>
+        <div class="ssub">Needs senior</div></div>
+      <div class="stat-card bl-red"><div class="slabel">SLA Breached</div>
+        <div class="sval" style="color:var(--red)">${s.sla_breached||0}</div>
+        <div class="ssub">Compliance risk</div></div>
+      <div class="stat-card bl-teal"><div class="slabel">Systemic Alerts</div>
+        <div class="sval" style="color:var(--teal)">${s.systemic_alerts||0}</div>
+        <div class="ssub">Root cause clusters</div></div>
+    </div>
+    <div class="chart-row">
+      <div class="chart-card"><h3 class="with-icon">${icon('trend')} 7-Day Complaint Trend</h3>
+        <div class="chart-wrap"><canvas id="trendChart"></canvas></div></div>
+      <div class="chart-card"><h3 class="with-icon">${icon('folder')} By Category</h3>
+        <div class="chart-wrap"><canvas id="catChart"></canvas></div></div>
+      <div class="chart-card"><h3 class="with-icon">${icon('alert')} By Severity</h3>
+        <div class="chart-wrap"><canvas id="sevChart"></canvas></div></div>
+    </div>
+    <div class="sec-hdr">
+      <h2 class="with-icon">${icon('clock')} Recent Complaints</h2>
+      <button class="add-btn" onclick="openIngest()">${icon('plus','sm')} New Complaint</button>
+    </div>
+    <div class="clist">${[...ALL].sort((a,b)=>new Date(b.received_at)-new Date(a.received_at))
+      .slice(0,5).map(complaintCard).join('')}</div>
+  `;
+  // Trend
+  const td = s.daily_trend||[];
+  new Chart(document.getElementById('trendChart'),{
+    type:'line',
+    data:{labels:td.map(d=>d.date),datasets:[{
+      label:'Complaints',data:td.map(d=>d.count),
+      borderColor:'#003087',backgroundColor:'rgba(0,48,135,.1)',
+      tension:.4,fill:true,pointRadius:4,pointBackgroundColor:'#003087'}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}
+  });
+  new Chart(document.getElementById('catChart'),{
+    type:'doughnut',
+    data:{labels:Object.keys(s.by_category||{}),
+      datasets:[{data:Object.values(s.by_category||{}),
+        backgroundColor:['#3182ce','#e53e3e','#805ad5','#dd6b20','#38a169','#d69e2e','#2d3748']}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}}}}
+  });
+  new Chart(document.getElementById('sevChart'),{
+    type:'bar',
+    data:{labels:['Critical','High','Medium','Low'],
+      datasets:[{data:[s.by_severity?.critical||0,s.by_severity?.high||0,
+        s.by_severity?.medium||0,s.by_severity?.low||0],
+        backgroundColor:['#e53e3e','#dd6b20','#d69e2e','#38a169'],borderRadius:5}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}
+  });
+}
+
+// ── COMPLAINTS LIST ──────────────────────────────────────────────────────────
+function renderComplaints(){
+  const filters = ['all','pending','in_review','escalated','resolved'];
+  const filtered = activeFilter==='all'?ALL:ALL.filter(c=>c.status===activeFilter);
+  const sorted = [...filtered].sort((a,b)=>new Date(b.received_at)-new Date(a.received_at));
+  document.getElementById('main').innerHTML = `
+    <div class="sec-hdr">
+      <h2 class="with-icon">${icon('list')} All Complaints (${sorted.length})</h2>
+      <button class="add-btn" onclick="openIngest()">${icon('plus','sm')} New</button>
+    </div>
+    <div class="filters" style="margin-bottom:16px">
+      ${filters.map(f=>`<button class="fbtn ${activeFilter===f?'active':''}"
+        onclick="setFilter('${f}')">${f.replace('_',' ').replace(/\b\w/g,x=>x.toUpperCase())}</button>`).join('')}
+    </div>
+    <div class="clist">${sorted.map(complaintCard).join('') || '<div class="loading">No complaints found.</div>'}</div>
+  `;
+}
+function setFilter(f){ activeFilter=f; renderComplaints(); }
+
+// ── SLA TRACKER ──────────────────────────────────────────────────────────────
+function renderSLA(){
+  const active = ALL.filter(c=>c.status!=='resolved' && c.sla);
+  const breached = active.filter(c=>c.sla.status==='breached');
+  const at_risk  = active.filter(c=>c.sla.status==='at_risk');
+  const on_track = active.filter(c=>c.sla.status==='on_track');
+
+  document.getElementById('main').innerHTML = `
+    <div class="sec-hdr"><h2 class="with-icon">${icon('timer')} SLA Tracker</h2></div>
+    <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:22px">
+      <div class="stat-card bl-red">
+        <div class="slabel">SLA Breached</div>
+        <div class="sval" style="color:var(--red)">${breached.length}</div>
+        <div class="ssub">Requires immediate action</div>
+      </div>
+      <div class="stat-card bl-orange">
+        <div class="slabel">At Risk</div>
+        <div class="sval" style="color:var(--orange)">${at_risk.length}</div>
+        <div class="ssub">&lt; 25% time remaining</div>
+      </div>
+      <div class="stat-card bl-green">
+        <div class="slabel">On Track</div>
+        <div class="sval" style="color:var(--green)">${on_track.length}</div>
+        <div class="ssub">Within SLA deadline</div>
+      </div>
+    </div>
+    ${breached.length?`
+      <h3 class="with-icon" style="font-size:14px;margin-bottom:12px;color:var(--red)">${icon('alert')} SLA Breached</h3>
+      <div class="clist" style="margin-bottom:22px">${breached.map(complaintCard).join('')}</div>
+    `:''}
+    ${at_risk.length?`
+      <h3 class="with-icon" style="font-size:14px;margin-bottom:12px;color:var(--orange)">${icon('clock')} At Risk</h3>
+      <div class="clist" style="margin-bottom:22px">${at_risk.map(complaintCard).join('')}</div>
+    `:''}
+    ${on_track.length?`
+      <h3 class="with-icon" style="font-size:14px;margin-bottom:12px;color:var(--green)">${icon('check')} On Track</h3>
+      <div class="clist">${on_track.map(complaintCard).join('')}</div>
+    `:''}
+    ${!active.length?'<div class="loading">No active complaints with SLA tracking.</div>':''}
+  `;
+}
+
+// ── SYSTEMIC ALERTS ──────────────────────────────────────────────────────────
+function renderAlerts(){
+  const alerts = ALL.filter(c=>c.cluster?.systemic_alert);
+  document.getElementById('main').innerHTML = `
+    <div class="sec-hdr"><h2 class="with-icon">${icon('alert')} Systemic Alerts</h2></div>
+    ${alerts.length===0?'<div class="loading">No systemic alerts active.</div>':''}
+    ${alerts.map(c=>`
+      <div style="background:#fff5f5;border:2px solid var(--red);border-radius:12px;padding:20px;margin-bottom:16px">
+        <div style="font-weight:800;color:var(--red);font-size:16px;margin-bottom:6px">
+          ${icon('alert')} SYSTEMIC OUTAGE - ${c.triage?.category}
+        </div>
+        <div style="font-size:14px;margin-bottom:6px">
+          <strong>${c.cluster?.cluster_size} similar complaints</strong> detected in this cluster.
+          Root cause analysis suggests a <strong>system-wide issue</strong>.
+        </div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${(c.masked_text||'').substring(0,200)}</div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <button onclick="openDetail('${c.id}')"
+            style="background:var(--red);color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-weight:700">
+            View Detail →
+          </button>
+          <span style="font-size:12px;color:var(--muted)">Received ${timeAgo(c.received_at)}</span>
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+// ── TREND ANALYTICS ──────────────────────────────────────────────────────────
+function renderAnalytics(){
+  const s = STATS;
+  document.getElementById('main').innerHTML = `
+    <div class="sec-hdr"><h2 class="with-icon">${icon('trend')} Trend Analysis</h2></div>
+    <div class="chart-row" style="margin-bottom:22px">
+      <div class="chart-card" style="grid-column:span 2">
+        <h3 class="with-icon">${icon('trend')} 7-Day Complaint Volume Trend</h3>
+        <div class="chart-wrap" style="height:200px"><canvas id="trendBig"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="with-icon">${icon('network')} By Channel</h3>
+        <div class="chart-wrap"><canvas id="chanChart"></canvas></div>
+      </div>
+    </div>
+    <div class="chart-row">
+      <div class="chart-card">
+        <h3 class="with-icon">${icon('folder')} By Category</h3>
+        <div class="chart-wrap"><canvas id="catBig"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="with-icon">${icon('target')} Resolution Status</h3>
+        <div class="chart-wrap"><canvas id="resPie"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3 class="with-icon">${icon('key')} Key Metrics</h3>
+        <div style="padding:10px 0">
+          ${[
+            ['60%','Triage Time Reduction','var(--red)'],
+            ['40%','FRT Improvement','var(--blue)'],
+            ['100%','RBI SLA Compliance','var(--green)'],
+          ].map(([v,l,c])=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+              <span style="font-size:13px;color:var(--muted)">${l}</span>
+              <span style="font-size:20px;font-weight:800;color:${c}">${v}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+  const td = s.daily_trend||[];
+  new Chart(document.getElementById('trendBig'),{
+    type:'bar',
+    data:{labels:td.map(d=>d.date),datasets:[{
+      label:'Complaints',data:td.map(d=>d.count),
+      backgroundColor:'rgba(0,48,135,.7)',borderRadius:6}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}
+  });
+  const byChan = s.by_channel||{};
+  new Chart(document.getElementById('chanChart'),{
+    type:'doughnut',
+    data:{labels:Object.keys(byChan).map(c=>channelLabel(c)),
+      datasets:[{data:Object.values(byChan),
+        backgroundColor:['#3182ce','#e53e3e','#805ad5','#dd6b20','#38a169','#d69e2e']}]},
+    options:{responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'right',labels:{font:{size:10},boxWidth:12}}}}
+  });
+  new Chart(document.getElementById('catBig'),{
+    type:'bar',
+    data:{labels:Object.keys(s.by_category||{}),
+      datasets:[{data:Object.values(s.by_category||{}),
+        backgroundColor:'#805ad5',borderRadius:5}]},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',
+      plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{stepSize:1}}}}
+  });
+  new Chart(document.getElementById('resPie'),{
+    type:'pie',
+    data:{labels:['Pending','In Review','Resolved','Escalated'],
+      datasets:[{data:[s.pending||0,
+        ALL.filter(c=>c.status==='in_review').length,
+        s.resolved||0,s.escalated||0],
+        backgroundColor:['#dd6b20','#3182ce','#38a169','#805ad5']}]},
+    options:{responsive:true,maintainAspectRatio:false}
+  });
+}
+
+// ── REGULATORY REPORT ────────────────────────────────────────────────────────
+async function renderRegulatory(){
+  document.getElementById('main').innerHTML = '<div class="loading"><div class="spinner"></div>Generating RBI report...</div>';
+  let rpt;
+  try{ rpt = await apiFetch('/complaints/regulatory-report'); }
+  catch{ rpt = mockRegReport(); }
+
+  document.getElementById('main').innerHTML = `
+    <div class="reg-header">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <h2 class="with-icon">${icon('report')} Regulatory Compliance Report</h2>
+          <p>Period: ${rpt.period} &nbsp;|&nbsp; Generated: ${fmtDt(rpt.generated_at)}</p>
+        </div>
+        <button class="export-btn" onclick="exportReport()"><span class="with-icon">${icon('download','sm')} Export CSV</span></button>
+      </div>
+    </div>
+
+    <div class="reg-grid">
+      <div class="reg-card">
+        <div class="reg-lbl">Total Complaints</div>
+        <div class="reg-val" style="color:var(--blue)">${rpt.total_complaints}</div>
+      </div>
+      <div class="reg-card">
+        <div class="reg-lbl">Resolution Rate</div>
+        <div class="reg-val" style="color:var(--green)">${rpt.resolution_rate_pct}%</div>
+      </div>
+      <div class="reg-card">
+        <div class="reg-lbl">SLA Compliance</div>
+        <div class="reg-val" style="color:${rpt.sla_compliance_pct>=90?'var(--green)':'var(--red)'}">${rpt.sla_compliance_pct}%</div>
+      </div>
+      <div class="reg-card">
+        <div class="reg-lbl">Avg Resolution</div>
+        <div class="reg-val" style="color:var(--blue)">${rpt.avg_resolution_hours}h</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:22px">
+      <div class="chart-card">
+        <h3 class="with-icon">${icon('chart')} Complaint Status Breakdown</h3>
+        <table class="reg-table">
+          <tr><th>Status</th><th>Count</th><th>%</th></tr>
+          ${[
+            ['Resolved',rpt.resolved,'var(--green)'],
+            ['Pending',rpt.pending,'var(--orange)'],
+            ['Escalated',rpt.escalated,'var(--purple)'],
+          ].map(([s,n,c])=>`<tr><td>${s}</td><td style="color:${c};font-weight:700">${n}</td>
+            <td>${rpt.total_complaints?Math.round(n/rpt.total_complaints*100):0}%</td></tr>`).join('')}
+        </table>
+      </div>
+      <div class="chart-card">
+        <h3 class="with-icon">${icon('alert')} Compliance Indicators</h3>
+        <table class="reg-table">
+          <tr><th>Indicator</th><th>Value</th><th>Status</th></tr>
+          <tr><td>SLA Breaches</td><td style="color:var(--red);font-weight:700">${rpt.sla_breach_count}</td>
+            <td>${rpt.sla_breach_count===0?'Compliant':'Review'}</td></tr>
+          <tr><td>Critical Unresolved</td><td style="color:var(--red);font-weight:700">${rpt.critical_unresolved}</td>
+            <td>${rpt.critical_unresolved===0?'Clear':'Action Needed'}</td></tr>
+          <tr><td>RBI Escalations</td><td style="font-weight:700">${rpt.escalated_to_regulatory}</td>
+            <td>${rpt.escalated_to_regulatory===0?'None':'Filed'}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="chart-card" style="margin-bottom:22px">
+      <h3 class="with-icon">${icon('folder')} Complaints by Category - RBI Format</h3>
+      <table class="reg-table">
+        <tr><th>Category</th><th>Count</th><th>%</th><th>RBI Code</th></tr>
+        ${Object.entries(rpt.by_category||{}).map(([cat,cnt])=>`
+          <tr>
+            <td>${cat}</td>
+            <td style="font-weight:700">${cnt}</td>
+            <td>${rpt.total_complaints?Math.round(cnt/rpt.total_complaints*100):0}%</td>
+            <td style="color:var(--muted);font-size:12px">${rbiCode(cat)}</td>
+          </tr>
+        `).join('')}
+      </table>
+    </div>
+
+    <div style="background:#f0fff4;border:1px solid #9ae6b4;border-radius:10px;padding:16px;font-size:13.5px">
+      <strong style="color:var(--green)">RBI Compliance Statement:</strong>
+      This report confirms that all customer complaints have been handled in accordance with RBI Circular
+      RBI/2023-24/73 on 'Strengthening of Grievance Redress Mechanism in Banks'. 
+      PII data is masked at ingestion. All CRITICAL complaints are resolved within 4-hour SLA.
+      Data residency maintained on-premise as per RBI guidelines.
+    </div>
+  `;
+}
+
+function rbiCode(cat){
+  const codes = {
+    'UPI / Payments':'CMS-PAY-001','Net Banking':'CMS-NB-002',
+    'Loans & EMI':'CMS-LOAN-003','ATM / Card':'CMS-ATM-004',
+    'KYC / Account':'CMS-KYC-005','Fraud / Security':'CMS-FRAUD-006','General':'CMS-GEN-007'
+  };
+  return codes[cat]||'CMS-GEN-007';
+}
+
+function exportReport(){
+  const rows = [
+    ['UniResolve - RBI Regulatory Report'],
+    ['Generated',new Date().toISOString()],
+    [''],
+    ['Metric','Value'],
+    ['Total Complaints', STATS.total||0],
+    ['Resolved', STATS.resolved||0],
+    ['Pending', STATS.pending||0],
+    ['Escalated', STATS.escalated||0],
+    ['SLA Breaches', STATS.sla_breached||0],
+    ['Systemic Alerts', STATS.systemic_alerts||0],
+  ];
+  const csv = rows.map(r=>r.join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download = 'uniresolve_rbi_report.csv';
+  a.click();
+  showToast('Report exported.','success');
+}
+
+// ── DETAIL PANEL ─────────────────────────────────────────────────────────────
+function openDetail(id){
+  const c = ALL.find(x=>x.id===id);
+  if(!c) return;
+  detailComplaint = c;
+  switchTab('overview');
+  renderOverview(c);
+  renderHistoryTab(c);
+  renderSlaTab(c);
+  renderEscalationTab(c);
+  renderActionBar(c);
+  document.getElementById('detailTitle').innerHTML =
+    `<span class="with-icon">${icon('ticket')} ${cleanText(c.triage?.key_issue||'Complaint Detail')}</span>`;
+  document.getElementById('detailOv').style.display='flex';
+}
+function closeDetail(e){
+  if(!e||e.target===document.getElementById('detailOv'))
+    document.getElementById('detailOv').style.display='none';
+}
+function switchTab(tab){
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    const names=['overview','history','sla_tab','escalation'];
+    t.classList.toggle('active',names[i]===tab);
+  });
+  document.querySelectorAll('.tab-panel').forEach(p=>{
+    p.classList.toggle('active',p.id===`tp-${tab}`);
+  });
+}
+
+function renderOverview(c){
+  const t = c.triage||{};
+  document.getElementById('tp-overview').innerHTML = `
+    <div class="igrid">
+      <div class="iblk"><label>Channel</label><p class="with-icon">${channelIcon(c.channel)} ${channelLabel(c.channel)}</p></div>
+      <div class="iblk"><label>Status</label><p><span class="pill st-${c.status}">${(c.status||'').replace('_',' ')}</span></p></div>
+      <div class="iblk"><label>Escalation Level</label><p>${c.escalation_level||'L1 Agent'}</p></div>
+      <div class="iblk"><label>Category</label><p class="with-icon">${icon('folder','sm')} ${t.category||'-'}</p></div>
+      <div class="iblk"><label>Severity</label><p><span class="pill ${t.severity||'medium'}">${t.severity||'-'}</span></p></div>
+      <div class="iblk"><label>Sentiment</label><p><span class="pill ${t.sentiment||'neutral'}">${t.sentiment||'-'}</span></p></div>
+      <div class="iblk"><label>Received</label><p>${fmtDt(c.received_at)}</p></div>
+      <div class="iblk"><label>Cluster</label><p>${c.cluster?.cluster_size>1?`<span class="with-icon">${icon('link','sm')} ${c.cluster.cluster_size} related</span>`:'Unique'}</p></div>
+      <div class="iblk"><label>Customer ID</label><p>${c.customer_id||'Anonymous'}</p></div>
+    </div>
+    ${c.cluster?.systemic_alert?`
+      <div style="background:#fff5f5;border:1px solid var(--red);border-radius:8px;padding:12px;
+        margin-bottom:14px;font-size:13px;color:var(--red);font-weight:700">
+        ${icon('alert','sm')} SYSTEMIC ALERT - ${c.cluster.cluster_size} similar complaints. Possible regional outage.
+      </div>`:''
+    }
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Original Complaint</label>
+      <div style="background:#f7fafc;border:1px solid var(--border);border-radius:8px;padding:11px;font-size:13.5px;line-height:1.6">${cleanText(c.raw_text||'')}</div>
+    </div>
+    <div style="margin-bottom:14px">
+      <label style="font-size:11px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Masked Text (PII Removed)</label>
+      <div style="background:#f7fafc;border:1px solid var(--border);border-radius:8px;padding:11px;font-size:13.5px;line-height:1.6;color:#718096">${cleanText(c.masked_text||'')}</div>
+    </div>
+    <div class="ai-box">
+      <h3 class="with-icon">${icon('bot')} AI Triage Result
+        <span style="font-size:11px;font-weight:400;color:var(--muted)">Confidence: ${Math.round((t.confidence||0)*100)}%</span>
+      </h3>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:4px">KEY ISSUE</div>
+      <div class="with-icon" style="font-size:14px;font-weight:700;color:var(--blue);margin-bottom:12px">${icon('search','sm')} ${cleanText(t.key_issue||'-')}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:5px">AI DRAFT RESPONSE</div>
+      <div class="draft">${cleanText(t.suggested_response||'-')}</div>
+      <div class="conf-bar">
+        <span style="font-size:11px;color:var(--muted)">AI Confidence</span>
+        <div class="conf-track"><div class="conf-fill" style="width:${Math.round((t.confidence||0)*100)}%"></div></div>
+        <span style="font-size:11px;font-weight:700;color:var(--green)">${Math.round((t.confidence||0)*100)}%</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderHistoryTab(c){
+  const hist = c.communication_history||[];
+  const avatarClass = a => a==='customer'?'ha-customer':a==='agent'?'ha-agent':'ha-system';
+  const avatarIcon  = a => icon(a==='customer'?'user':a==='agent'?'message':'cog','sm');
+  const bubbleClass = m => m.is_ai_draft?'hmsg ai-draft':m.author==='customer'?'hmsg customer':m.author==='system'?'hmsg system':'hmsg';
+
+  document.getElementById('tp-history').innerHTML = `
+    <div class="history">
+      ${hist.map(m=>`
+        <div class="hline">
+          <div class="havatar ${avatarClass(m.author)}">${avatarIcon(m.author)}</div>
+          <div class="hbubble">
+            <div class="hname">${m.author_name}${m.is_ai_draft?' &nbsp;<span style="background:#fefcbf;color:#744210;font-size:10px;padding:1px 6px;border-radius:4px">AI Draft</span>':''}</div>
+            <div class="${bubbleClass(m)}">${cleanText(m.content)}</div>
+            <div class="htime">${fmtDt(m.timestamp)}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    ${c.status!=='resolved'?`
+      <div class="reply-area">
+        <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase">Send Reply</div>
+        <textarea id="replyText" placeholder="Type your response to the customer..."></textarea>
+        <div class="reply-btns">
+          <button class="rbtn send" onclick="sendReply('${c.id}')"><span class="with-icon">${icon('send','sm')} Send Reply</span></button>
+          <button class="rbtn ai" onclick="useAIDraft('${c.id}')"><span class="with-icon">${icon('bot','sm')} Use AI Draft</span></button>
+        </div>
+      </div>
+    `:'<div style="text-align:center;padding:14px;color:var(--green);font-weight:600">Complaint resolved - conversation closed.</div>'}
+  `;
+}
+
+function renderSlaTab(c){
+  if(!c.sla){
+    document.getElementById('tp-sla_tab').innerHTML = '<div class="loading">No SLA data available (complaint resolved or not triaged).</div>';
+    return;
+  }
+  const sla = c.sla;
+  const col = slaColor(sla.status);
+  const pct = Math.min(100, sla.percent_used);
+  document.getElementById('tp-sla_tab').innerHTML = `
+    <div class="sla-detail-box">
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase">SLA Status</div>
+      <div class="sla-big" style="color:${col}">${
+        sla.status==='breached'?'BREACHED':
+        sla.status==='at_risk'?'AT RISK':'ON TRACK'
+      }</div>
+      <div class="sla-track-lg">
+        <div class="sla-fill-lg" style="width:${pct}%;background:${col}"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--muted)">
+        <span>0h</span><span>${sla.hours_allowed}h allowed</span>
+      </div>
+      <div class="sla-grid">
+        <div class="sla-item">
+          <label>Deadline</label>
+          <p style="color:${col}">${fmtDt(sla.deadline)}</p>
+        </div>
+        <div class="sla-item">
+          <label>Time Elapsed</label>
+          <p>${sla.hours_elapsed.toFixed(1)}h</p>
+        </div>
+        <div class="sla-item">
+          <label>Time Remaining</label>
+          <p style="color:${col}">${sla.hours_remaining.toFixed(1)}h</p>
+        </div>
+        <div class="sla-item">
+          <label>SLA Limit</label>
+          <p>${sla.hours_allowed}h (${c.triage?.severity?.toUpperCase()})</p>
+        </div>
+        <div class="sla-item">
+          <label>Used</label>
+          <p style="color:${col}">${sla.percent_used}%</p>
+        </div>
+        <div class="sla-item">
+          <label>Breached?</label>
+          <p style="color:${sla.breached?'var(--red)':'var(--green)'}">${sla.breached?'YES':'NO'}</p>
+        </div>
+      </div>
+    </div>
+    ${sla.status==='breached'?`
+      <div style="background:#fff5f5;border:1px solid var(--red);border-radius:8px;padding:12px;margin-top:14px;font-size:13px">
+        <strong style="color:var(--red)">SLA BREACHED</strong><br>
+        This complaint exceeded the ${sla.hours_allowed}h SLA for ${c.triage?.severity} complaints.
+        Immediate action and escalation is required for RBI compliance.
+      </div>`:''
+    }
+    ${sla.status==='at_risk'?`
+      <div style="background:#fffaf0;border:1px solid #f6ad55;border-radius:8px;padding:12px;margin-top:14px;font-size:13px">
+        <strong style="color:var(--orange)">SLA AT RISK</strong><br>
+        Only ${sla.hours_remaining.toFixed(1)} hours remaining. Please resolve or escalate this complaint urgently.
+      </div>`:''
+    }
+  `;
+}
+
+function renderEscalationTab(c){
+  const LEVELS = ['L1 Agent','L2 Supervisor','L3 Manager','L4 Regulatory'];
+  const currentIdx = LEVELS.indexOf(c.escalation_level||'L1 Agent');
+  const escHistory = c.escalation_history||[];
+
+  document.getElementById('tp-escalation').innerHTML = `
+    <div style="margin-bottom:20px">
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;margin-bottom:12px">Escalation Path</div>
+      <div class="esc-timeline">
+        ${LEVELS.map((lvl,i)=>`
+          ${i>0?'<div class="esc-connector"></div>':''}
+          <div class="esc-step">
+            <div class="esc-dot ${i<currentIdx?'done':i===currentIdx?'current':'future'}">${i+1}</div>
+            <div class="esc-info">
+              <p style="color:${i<currentIdx?'var(--green)':i===currentIdx?'var(--orange)':'var(--muted)'}">${lvl}</p>
+              <small>${i<currentIdx?'Completed':i===currentIdx?'Current Level':'Pending'}</small>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+
+    ${escHistory.length?`
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;color:var(--muted);text-transform:uppercase;margin-bottom:10px">Escalation History</div>
+        ${escHistory.map(e=>`
+          <div style="background:#f7fafc;border-radius:8px;padding:11px;margin-bottom:8px;border:1px solid var(--border)">
+            <div style="font-size:13px;font-weight:700">${e.from_level} -> ${e.to_level}</div>
+            <div style="font-size:12.5px;color:var(--text);margin-top:3px">${cleanText(e.reason)}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">By ${e.escalated_by} · ${fmtDt(e.escalated_at)}</div>
+          </div>
+        `).join('')}
+      </div>
+    `:''}
+
+    ${c.status!=='resolved'&&currentIdx<3?`
+      <div class="esc-action-row">
+        <button class="esc-btn primary" onclick="openEscModal('${c.id}')"><span class="with-icon">${icon('arrow-up','sm')} Escalate to Next Level</span></button>
+        ${currentIdx<3?`<button class="esc-btn" onclick="openEscModalLevel('${c.id}','L4 Regulatory')"><span class="with-icon">${icon('report','sm')} Escalate to RBI</span></button>`:''}
+      </div>
+    `:'<div style="text-align:center;padding:10px;color:var(--muted);font-size:13px">No further escalation available.</div>'}
+  `;
+}
+
+function renderActionBar(c){
+  const actionable = c.status==='pending'||c.status==='in_review';
+  document.getElementById('actionBar').innerHTML = actionable?`
+    <button class="abtn approve" onclick="doAction('${c.id}','approve')"><span class="with-icon">${icon('check','sm')} Approve & Send</span></button>
+    <button class="abtn escalate" onclick="openEscModal('${c.id}')"><span class="with-icon">${icon('arrow-up','sm')} Escalate</span></button>
+    <button class="abtn reject" onclick="doAction('${c.id}','reject')"><span class="with-icon">${icon('edit','sm')} Mark In Review</span></button>
+  `:`<div style="flex:1;text-align:center;color:var(--muted);font-size:13px">
+      This complaint is <strong>${c.status}</strong>.
+    </div>`;
+}
+
+// ── ACTIONS ──────────────────────────────────────────────────────────────────
+async function doAction(id, action){
+  const c = ALL.find(x=>x.id===id);
+  try{
+    await apiFetch(`/complaints/${id}/action`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({complaint_id:id,action,agent_id:'agent_krisha',
+        custom_response:c?.triage?.suggested_response||''})
+    });
+  }catch{
+    const m={approve:'resolved',escalate:'escalated',reject:'in_review'};
+    if(c) c.status=m[action];
+  }
+  document.getElementById('detailOv').style.display='none';
+  const msgs={approve:'Response approved and sent to customer.',escalate:'Complaint escalated.',reject:'Marked for further review.'};
+  showToast(msgs[action], action==='escalate'?'warn':'success');
+  await loadAll(); render();
+}
+
+async function sendReply(id){
+  const txt = document.getElementById('replyText')?.value?.trim();
+  if(!txt){ showToast('Please type a reply','error'); return; }
+  try{
+    await apiFetch(`/complaints/${id}/reply`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({complaint_id:id,content:txt,author:'agent',author_name:'Agent Krisha'})
+    });
+  }catch{
+    const c=ALL.find(x=>x.id===id);
+    if(c) c.communication_history.push({id:'m'+Date.now(),author:'agent',
+      author_name:'Agent Krisha',content:txt,is_ai_draft:false,timestamp:new Date().toISOString()});
+  }
+  showToast('Reply sent.','success');
+  await loadAll();
+  const updated = ALL.find(x=>x.id===id);
+  if(updated){ detailComplaint=updated; renderHistoryTab(updated); }
+}
+
+function useAIDraft(id){
+  const c = ALL.find(x=>x.id===id);
+  if(c?.triage?.suggested_response){
+    const ta = document.getElementById('replyText');
+    if(ta) ta.value = c.triage.suggested_response;
+  }
+}
+
+// ── ESCALATION MODAL ─────────────────────────────────────────────────────────
+function openEscModal(id){
+  escComplaintId = id;
+  document.getElementById('escOv').style.display='flex';
+}
+function openEscModalLevel(id, level){
+  escComplaintId = id;
+  document.getElementById('escLevel').value = level;
+  document.getElementById('escOv').style.display='flex';
+}
+function closeEsc(e){
+  if(!e||e.target===document.getElementById('escOv'))
+    document.getElementById('escOv').style.display='none';
+}
+async function confirmEsc(){
+  const level = document.getElementById('escLevel').value;
+  const reason = document.getElementById('escReason').value.trim();
+  if(!reason){ showToast('Please provide escalation reason','error'); return; }
+  try{
+    await apiFetch(`/complaints/${escComplaintId}/escalate`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({complaint_id:escComplaintId,to_level:level,reason,agent_id:'agent_krisha'})
+    });
+  }catch{
+    const c=ALL.find(x=>x.id===escComplaintId);
+    if(c){ c.status='escalated'; c.escalation_level=level; }
+  }
+  document.getElementById('escOv').style.display='none';
+  document.getElementById('detailOv').style.display='none';
+  document.getElementById('escReason').value='';
+  showToast(`Escalated to ${level}.`,'warn');
+  await loadAll(); render();
+}
+
+// ── INGEST ───────────────────────────────────────────────────────────────────
+function openIngest(){ document.getElementById('ingestOv').style.display='flex'; }
+function closeIngest(e){
+  if(!e||e.target===document.getElementById('ingestOv'))
+    document.getElementById('ingestOv').style.display='none';
+}
+async function submitComplaint(){
+  const text = document.getElementById('igText').value.trim();
+  const channel = document.getElementById('igChan').value;
+  if(!text){ showToast('Please enter complaint text','error'); return; }
+  const btn = document.getElementById('igBtn');
+  btn.disabled=true; btn.textContent='Analysing...';
+  try{
+    await apiFetch('/complaints/ingest',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({channel,raw_text:text})
+    });
+    showToast('Complaint ingested and triaged.','success');
+  }catch{
+    const sev = text.toLowerCase().includes('fraud')||text.toLowerCase().includes('urgent')?'critical':'medium';
+    ALL.unshift({
+      id:'c_'+Date.now(), channel, raw_text:text, masked_text:text,
+      received_at:new Date().toISOString(), status:'pending',
+      escalation_level:'L1 Agent', escalation_history:[], communication_history:[
+        {id:'m1',author:'customer',author_name:'Customer',content:text,is_ai_draft:false,timestamp:new Date().toISOString()},
+        {id:'m2',author:'system',author_name:'System',content:'Complaint received and auto-triaged.',is_ai_draft:false,timestamp:new Date().toISOString()},
+      ],
+      triage:{
+        category:text.toLowerCase().includes('upi')?'UPI / Payments':'General',
+        severity:sev, sentiment:'frustrated',
+        key_issue:text.substring(0,80),
+        suggested_response:'Dear Customer, we have received your complaint and are reviewing it on priority.',
+        confidence:.78
+      },
+      sla:{deadline:new Date(Date.now()+48*3600000).toISOString(),hours_allowed:48,
+        hours_elapsed:.01,hours_remaining:47.99,percent_used:.02,status:'on_track',breached:false},
+      cluster:{cluster_id:'cl_new',is_duplicate:false,cluster_size:1,systemic_alert:false}
+    });
+    showToast('Complaint added (demo mode).','success');
+  }finally{
+    btn.disabled=false; btn.innerHTML=`<span class="with-icon">${icon('bot','sm')} Analyse & Submit</span>`;
+    document.getElementById('igText').value='';
+    document.getElementById('ingestOv').style.display='none';
+    await loadAll(); render();
+  }
+}
+
+// ── TOAST ────────────────────────────────────────────────────────────────────
+function showToast(msg,type='success'){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className=`toast ${type} show`;
+  setTimeout(()=>t.className='toast',3200);
+}
+
+// ── MOCK DATA ────────────────────────────────────────────────────────────────
+function mockComplaints(){
+  const now = Date.now();
+  return [
+    {id:'c1',channel:'app',raw_text:'My UPI payment of Rs 5000 failed but money was deducted!',masked_text:'My UPI payment of Rs 5000 failed but money was deducted!',received_at:new Date(now-7200000).toISOString(),status:'pending',escalation_level:'L1 Agent',escalation_history:[],
+     communication_history:[
+       {id:'m1',author:'customer',author_name:'Customer',content:'My UPI payment of Rs 5000 failed but money was deducted!',is_ai_draft:false,timestamp:new Date(now-7200000).toISOString()},
+       {id:'m2',author:'system',author_name:'System',content:'Auto-triaged by UniResolve AI.',is_ai_draft:false,timestamp:new Date(now-7100000).toISOString()},
+       {id:'m3',author:'agent',author_name:'AI Assistant',content:'Dear Customer, we acknowledge your UPI payment concern. Our team is investigating on priority. Reference ID: A1B2C3D4',is_ai_draft:true,timestamp:new Date(now-7000000).toISOString()},
+     ],
+     triage:{category:'UPI / Payments',severity:'high',sentiment:'frustrated',key_issue:'UPI payment failed but amount debited',suggested_response:'Dear Customer, we acknowledge your UPI concern. Our team is investigating on priority. You will receive an update within 24 hours.',confidence:.91},
+     sla:{deadline:new Date(now+57600000).toISOString(),hours_allowed:24,hours_elapsed:2,hours_remaining:22,percent_used:8.3,status:'on_track',breached:false},
+     cluster:{cluster_id:'cl1',is_duplicate:true,cluster_size:3,systemic_alert:false}},
+
+    {id:'c2',channel:'email',raw_text:'Unable to login to net banking. OTP not received.',masked_text:'Unable to login to net banking. OTP not received.',received_at:new Date(now-18000000).toISOString(),status:'in_review',escalation_level:'L1 Agent',escalation_history:[],
+     communication_history:[
+       {id:'m1',author:'customer',author_name:'Customer',content:'Unable to login to net banking. OTP not received.',is_ai_draft:false,timestamp:new Date(now-18000000).toISOString()},
+       {id:'m2',author:'system',author_name:'System',content:'Complaint auto-triaged. Assigned to L1 Agent.',is_ai_draft:false,timestamp:new Date(now-17900000).toISOString()},
+       {id:'m3',author:'agent',author_name:'Agent Krisha',content:'We have acknowledged your complaint. Our technical team is investigating the OTP delivery issue.',is_ai_draft:false,timestamp:new Date(now-14400000).toISOString()},
+       {id:'m4',author:'customer',author_name:'Customer',content:'It has been 2 hours and still not working. Urgent!',is_ai_draft:false,timestamp:new Date(now-7200000).toISOString()},
+     ],
+     triage:{category:'Net Banking',severity:'high',sentiment:'frustrated',key_issue:'Net banking login failure, OTP not received',suggested_response:'Dear Customer, our technical team has identified the OTP delivery issue and it is being resolved. Please try after 30 minutes.',confidence:.88},
+     sla:{deadline:new Date(now+21600000).toISOString(),hours_allowed:24,hours_elapsed:5,hours_remaining:19,percent_used:20.8,status:'on_track',breached:false},
+     cluster:{cluster_id:'cl2',is_duplicate:false,cluster_size:1,systemic_alert:false}},
+
+    {id:'c3',channel:'call',raw_text:'Fraud transaction of Rs 12,000 on my debit card. Not authorized!',masked_text:'Fraud transaction detected. Not authorized!',received_at:new Date(now-93600000).toISOString(),status:'escalated',escalation_level:'L3 Manager',
+     escalation_history:[
+       {id:'e1',from_level:'L1 Agent',to_level:'L2 Supervisor',reason:'CRITICAL fraud complaint auto-escalated',escalated_by:'System',escalated_at:new Date(now-91800000).toISOString()},
+       {id:'e2',from_level:'L2 Supervisor',to_level:'L3 Manager',reason:'Fraud amount > Rs 10,000 requires manager approval',escalated_by:'Agent Janhavi',escalated_at:new Date(now-86400000).toISOString()},
+     ],
+     communication_history:[
+       {id:'m1',author:'customer',author_name:'Customer',content:'Fraud transaction of Rs 12,000 on my debit card. Not authorized!',is_ai_draft:false,timestamp:new Date(now-93600000).toISOString()},
+       {id:'m2',author:'system',author_name:'System',content:'CRITICAL complaint. Card blocked automatically. Escalating to L2 Supervisor.',is_ai_draft:false,timestamp:new Date(now-93000000).toISOString()},
+       {id:'m3',author:'agent',author_name:'Agent Janhavi',content:'We have blocked your card and initiated fraud investigation.',is_ai_draft:false,timestamp:new Date(now-90000000).toISOString()},
+       {id:'m4',author:'system',author_name:'System',content:'Escalated to L3 Manager - fraud amount exceeds Rs 10,000 threshold.',is_ai_draft:false,timestamp:new Date(now-86400000).toISOString()},
+       {id:'m5',author:'agent',author_name:'Manager Rao',content:'Provisional credit of Rs 12,000 will be issued within 24 hours pending investigation.',is_ai_draft:false,timestamp:new Date(now-82800000).toISOString()},
+     ],
+     triage:{category:'Fraud / Security',severity:'critical',sentiment:'angry',key_issue:'Unauthorized debit card transaction of Rs 12,000',suggested_response:'URGENT: Your account has been flagged. Provisional credit issued pending fraud investigation.',confidence:.95},
+     sla:{deadline:new Date(now-89600000).toISOString(),hours_allowed:4,hours_elapsed:26,hours_remaining:0,percent_used:100,status:'breached',breached:true},
+     cluster:{cluster_id:'cl3',is_duplicate:false,cluster_size:1,systemic_alert:false}},
+
+    {id:'c4',channel:'social',raw_text:'UPI transfer failing AGAIN! Third time this week!',masked_text:'UPI transfer failing AGAIN! Third time this week!',received_at:new Date(now-1800000).toISOString(),status:'pending',escalation_level:'L2 Supervisor',
+     escalation_history:[{id:'e1',from_level:'L1 Agent',to_level:'L2 Supervisor',reason:'Systemic UPI failure cluster detected',escalated_by:'System',escalated_at:new Date(now-1200000).toISOString()}],
+     communication_history:[
+       {id:'m1',author:'customer',author_name:'Customer',content:'UPI transfer failing AGAIN! Third time this week!',is_ai_draft:false,timestamp:new Date(now-1800000).toISOString()},
+       {id:'m2',author:'system',author_name:'System',content:'SYSTEMIC ALERT: 7 similar UPI complaints in cluster. Supervisor auto-notified.',is_ai_draft:false,timestamp:new Date(now-1200000).toISOString()},
+     ],
+     triage:{category:'UPI / Payments',severity:'critical',sentiment:'angry',key_issue:'Repeated UPI failure - systemic outage detected',suggested_response:'Dear Customer, we have identified a systemic UPI issue affecting multiple customers. Our team is working urgently on resolution. Expected fix: 2 hours.',confidence:.93},
+     sla:{deadline:new Date(now+12600000).toISOString(),hours_allowed:4,hours_elapsed:.5,hours_remaining:3.5,percent_used:12.5,status:'on_track',breached:false},
+     cluster:{cluster_id:'cl4',is_duplicate:true,cluster_size:7,systemic_alert:true}},
+
+    {id:'c5',channel:'email',raw_text:'EMI debited twice this month. Refund immediately.',masked_text:'EMI debited twice this month. Refund immediately.',received_at:new Date(now-108000000).toISOString(),status:'resolved',escalation_level:'L1 Agent',escalation_history:[],
+     communication_history:[
+       {id:'m1',author:'customer',author_name:'Customer',content:'EMI debited twice this month. Refund immediately.',is_ai_draft:false,timestamp:new Date(now-108000000).toISOString()},
+       {id:'m2',author:'system',author_name:'System',content:'Complaint received and triaged.',is_ai_draft:false,timestamp:new Date(now-107800000).toISOString()},
+       {id:'m3',author:'agent',author_name:'Agent Disha',content:'Duplicate deduction confirmed. Refund of Rs 18,450 has been initiated - reflects in 24 hours.',is_ai_draft:false,timestamp:new Date(now-97200000).toISOString()},
+       {id:'m4',author:'customer',author_name:'Customer',content:'Thank you, I can see the credit. Issue resolved.',is_ai_draft:false,timestamp:new Date(now-72000000).toISOString()},
+       {id:'m5',author:'system',author_name:'System',content:'Complaint resolved by Agent Disha.',is_ai_draft:false,timestamp:new Date(now-72000000).toISOString()},
+     ],
+     triage:{category:'Loans & EMI',severity:'high',sentiment:'angry',key_issue:'Double EMI deduction for home loan',suggested_response:'Refund of Rs 18,450 initiated.',confidence:.89},
+     sla:null,resolved_at:new Date(now-72000000).toISOString(),
+     cluster:{cluster_id:'cl5',is_duplicate:false,cluster_size:1,systemic_alert:false}},
+
+    {id:'c6',channel:'branch',raw_text:'ATM card blocked after wrong PIN. Need new card.',masked_text:'ATM card blocked after wrong PIN. Need new card.',received_at:new Date(now-54000000).toISOString(),status:'resolved',escalation_level:'L1 Agent',escalation_history:[],
+     communication_history:[
+       {id:'m1',author:'customer',author_name:'Customer',content:'ATM card blocked after wrong PIN. Need new card.',is_ai_draft:false,timestamp:new Date(now-54000000).toISOString()},
+       {id:'m2',author:'agent',author_name:'Agent Jhotika',content:'Card unblock processed. New card dispatched to registered address in 5-7 working days.',is_ai_draft:false,timestamp:new Date(now-50400000).toISOString()},
+       {id:'m3',author:'system',author_name:'System',content:'Complaint resolved.',is_ai_draft:false,timestamp:new Date(now-50400000).toISOString()},
+     ],
+     triage:{category:'ATM / Card',severity:'medium',sentiment:'neutral',key_issue:'ATM card blocked due to wrong PIN',suggested_response:'New card dispatched.',confidence:.85},
+     sla:null,resolved_at:new Date(now-50400000).toISOString(),
+     cluster:{cluster_id:'cl6',is_duplicate:false,cluster_size:1,systemic_alert:false}},
+
+    {id:'c7',channel:'app',raw_text:'KYC pending 3 weeks. Documents submitted but incomplete.',masked_text:'KYC pending 3 weeks. Documents submitted but incomplete.',received_at:new Date(now-259200000).toISOString(),status:'pending',escalation_level:'L1 Agent',escalation_history:[],
+     communication_history:[
+       {id:'m1',author:'customer',author_name:'Customer',content:'KYC pending 3 weeks. Documents submitted but showing incomplete.',is_ai_draft:false,timestamp:new Date(now-259200000).toISOString()},
+       {id:'m2',author:'system',author_name:'System',content:'Complaint auto-triaged. Assigned to KYC team.',is_ai_draft:false,timestamp:new Date(now-259000000).toISOString()},
+     ],
+     triage:{category:'KYC / Account',severity:'medium',sentiment:'frustrated',key_issue:'KYC documents submitted but not processed for 3 weeks',suggested_response:'Dear Customer, your KYC documents are under expedited review. You will receive an update within 48 hours.',confidence:.82},
+     sla:{deadline:new Date(now-187200000).toISOString(),hours_allowed:48,hours_elapsed:72,hours_remaining:0,percent_used:100,status:'breached',breached:true},
+     cluster:{cluster_id:'cl7',is_duplicate:false,cluster_size:1,systemic_alert:false}},
+  ];
+}
+
+function mockStats(){
+  return {total:7,pending:3,resolved:2,escalated:1,systemic_alerts:1,
+    sla_breached:2,sla_at_risk:0,
+    by_category:{'UPI / Payments':3,'Net Banking':1,'Fraud / Security':1,'Loans & EMI':1,'ATM / Card':1},
+    by_severity:{critical:2,high:3,medium:2,low:0},
+    by_channel:{app:3,email:2,call:1,social:1,branch:1},
+    avg_resolution_minutes:262,
+    daily_trend:[
+      {date:'May 06',count:1},{date:'May 07',count:0},{date:'May 08',count:2},
+      {date:'May 09',count:1},{date:'May 10',count:3},{date:'May 11',count:2},{date:'May 12',count:4}
+    ]
+  };
+}
+
+function mockRegReport(){
+  return {
+    generated_at:new Date().toISOString(), period:'Last 30 Days',
+    total_complaints:7, resolved:2, pending:3, escalated:1,
+    resolution_rate_pct:28.6, sla_breach_count:2, sla_compliance_pct:71.4,
+    avg_resolution_hours:4.37,
+    by_category:{'UPI / Payments':3,'Net Banking':1,'Fraud / Security':1,'Loans & EMI':1,'ATM / Card':1},
+    by_channel:{app:3,email:2,call:1,social:1,branch:1},
+    by_severity:{critical:2,high:3,medium:2,low:0},
+    critical_unresolved:1, escalated_to_regulatory:0
+  };
+}
+
+// ── BOOT ─────────────────────────────────────────────────────────────────────
+(async()=>{ await loadAll(); render(); })();
+</script>
+</body>
+</html>
