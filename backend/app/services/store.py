@@ -1,325 +1,335 @@
-"""Complaint Store — in-memory for hackathon demo."""
+"""SQLite-backed complaint store for the hackathon demo."""
 
-from typing import Optional
+from __future__ import annotations
+
+import json
+import sqlite3
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta
-from collections import defaultdict
+from pathlib import Path
+from typing import Any, Optional
 
 from app.models.complaint import (
-    Complaint, ComplaintStatus, DashboardStats,
-    SLAStatus, EscalationLevel, EscalationRecord,
-    HistoryMessage, MessageAuthor, compute_sla,
-    RegulatoryReport, Channel, Category, Severity,
-    TriageResult, Sentiment, DuplicateCluster
+    Category,
+    Channel,
+    Complaint,
+    ComplaintStatus,
+    DashboardStats,
+    DuplicateCluster,
+    EscalationLevel,
+    EscalationRecord,
+    HistoryMessage,
+    MessageAuthor,
+    RegulatoryReport,
+    SLAStatus,
+    Sentiment,
+    Severity,
+    TriageResult,
+    compute_sla,
 )
+
+DB_PATH = Path(__file__).resolve().parents[2] / "complaints.db"
+
+
+def _dt(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    return datetime.fromisoformat(value)
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value, default=str)
+
+
+def _loads(value: str | None, default: Any):
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return default
 
 
 class ComplaintStore:
-    def __init__(self):
-        self._store: dict[str, Complaint] = {}
+    def __init__(self, db_path: Path = DB_PATH):
+        self.db_path = db_path
+        self._init_db()
+
+    def _connect(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_db(self):
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS complaints (
+                    id TEXT PRIMARY KEY,
+                    channel TEXT,
+                    channel_metadata TEXT,
+                    complaint_text TEXT,
+                    masked_text TEXT,
+                    masked_fields TEXT,
+                    category TEXT,
+                    severity TEXT,
+                    sentiment TEXT,
+                    key_issues TEXT,
+                    draft_response TEXT,
+                    status TEXT DEFAULT 'pending',
+                    assigned_agent TEXT,
+                    sla_deadline TEXT,
+                    sla_breached INTEGER DEFAULT 0,
+                    duplicate_of TEXT,
+                    cluster_id TEXT,
+                    created_at TEXT,
+                    updated_at TEXT,
+                    resolved_at TEXT,
+                    customer_id TEXT,
+                    source_ref TEXT,
+                    received_at TEXT,
+                    confidence REAL,
+                    cluster_size INTEGER DEFAULT 1,
+                    systemic_alert INTEGER DEFAULT 0,
+                    escalation_level TEXT,
+                    escalation_history TEXT,
+                    communication_history TEXT,
+                    agent_note TEXT
+                )
+                """
+            )
+            conn.commit()
+
+    def _row_to_complaint(self, row: sqlite3.Row) -> Complaint:
+        key_issues = _loads(row["key_issues"], [])
+        received_at = _dt(row["received_at"]) or _dt(row["created_at"]) or datetime.utcnow()
+        severity = Severity(row["severity"] or "medium")
+        deadline = _dt(row["sla_deadline"])
+        sla = None if row["status"] == ComplaintStatus.RESOLVED.value else compute_sla(received_at, severity.value, deadline)
+        triage = TriageResult(
+            category=Category(row["category"] or "general"),
+            severity=severity,
+            sentiment=Sentiment(row["sentiment"] or "neutral"),
+            key_issue=key_issues[0] if key_issues else "",
+            key_issues=key_issues,
+            suggested_response=row["draft_response"] or "",
+            confidence=float(row["confidence"] or 0.75),
+        )
+        cluster = DuplicateCluster(
+            cluster_id=row["cluster_id"] or "",
+            is_duplicate=bool(row["duplicate_of"]),
+            duplicate_of=row["duplicate_of"],
+            cluster_size=int(row["cluster_size"] or 1),
+            systemic_alert=bool(row["systemic_alert"]),
+        )
+        history = [HistoryMessage.model_validate(item) for item in _loads(row["communication_history"], [])]
+        escalations = [EscalationRecord.model_validate(item) for item in _loads(row["escalation_history"], [])]
+        sla_status = sla.status if sla else (SLAStatus.BREACHED if row["sla_breached"] else SLAStatus.ON_TRACK)
+        return Complaint(
+            id=row["id"],
+            channel=Channel(row["channel"]),
+            channel_metadata=_loads(row["channel_metadata"], {}),
+            raw_text=row["complaint_text"] or "",
+            masked_text=row["masked_text"] or "",
+            masked_fields=_loads(row["masked_fields"], []),
+            customer_id=row["customer_id"],
+            source_ref=row["source_ref"],
+            received_at=received_at,
+            triage=triage,
+            cluster=cluster,
+            status=ComplaintStatus(row["status"] or "pending"),
+            assigned_agent=row["assigned_agent"],
+            agent_note=row["agent_note"],
+            escalation_level=EscalationLevel(row["escalation_level"] or "L1 Agent"),
+            escalation_history=escalations,
+            communication_history=history,
+            sla=sla,
+            sla_status=sla_status,
+            sla_breached=bool(row["sla_breached"] or (sla.breached if sla else False)),
+            resolved_at=_dt(row["resolved_at"]),
+            created_at=_dt(row["created_at"]) or received_at,
+            updated_at=_dt(row["updated_at"]) or received_at,
+        )
 
     def save(self, complaint: Complaint) -> Complaint:
-        self._store[complaint.id] = complaint
+        now = datetime.utcnow()
+        complaint.updated_at = now
+        if complaint.triage and not complaint.sla:
+            complaint.sla = compute_sla(complaint.received_at, complaint.triage.severity.value)
+        complaint.sla_status = complaint.sla.status if complaint.sla else SLAStatus.ON_TRACK
+        complaint.sla_breached = bool(complaint.sla and complaint.sla.breached)
+        key_issues = complaint.triage.key_issues if complaint.triage and complaint.triage.key_issues else []
+        if complaint.triage and complaint.triage.key_issue and complaint.triage.key_issue not in key_issues:
+            key_issues = [complaint.triage.key_issue, *key_issues]
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO complaints (
+                    id, channel, channel_metadata, complaint_text, masked_text, masked_fields,
+                    category, severity, sentiment, key_issues, draft_response, status,
+                    assigned_agent, sla_deadline, sla_breached, duplicate_of, cluster_id,
+                    created_at, updated_at, resolved_at, customer_id, source_ref, received_at,
+                    confidence, cluster_size, systemic_alert, escalation_level,
+                    escalation_history, communication_history, agent_note
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    complaint.id,
+                    complaint.channel.value,
+                    _json(complaint.channel_metadata),
+                    complaint.raw_text,
+                    complaint.masked_text,
+                    _json(complaint.masked_fields),
+                    complaint.triage.category.value if complaint.triage else Category.GENERAL.value,
+                    complaint.triage.severity.value if complaint.triage else Severity.MEDIUM.value,
+                    complaint.triage.sentiment.value if complaint.triage else Sentiment.NEUTRAL.value,
+                    _json(key_issues),
+                    complaint.triage.suggested_response if complaint.triage else "",
+                    complaint.status.value,
+                    complaint.assigned_agent,
+                    complaint.sla.deadline.isoformat() if complaint.sla else None,
+                    int(complaint.sla_breached),
+                    complaint.cluster.duplicate_of if complaint.cluster else None,
+                    complaint.cluster.cluster_id if complaint.cluster else None,
+                    complaint.created_at.isoformat(),
+                    complaint.updated_at.isoformat(),
+                    complaint.resolved_at.isoformat() if complaint.resolved_at else None,
+                    complaint.customer_id,
+                    complaint.source_ref,
+                    complaint.received_at.isoformat(),
+                    complaint.triage.confidence if complaint.triage else 0.75,
+                    complaint.cluster.cluster_size if complaint.cluster else 1,
+                    int(complaint.cluster.systemic_alert) if complaint.cluster else 0,
+                    complaint.escalation_level.value,
+                    _json([e.model_dump(mode="json") for e in complaint.escalation_history]),
+                    _json([h.model_dump(mode="json") for h in complaint.communication_history]),
+                    complaint.agent_note,
+                ),
+            )
+            conn.commit()
         return complaint
 
     def get(self, complaint_id: str) -> Optional[Complaint]:
-        c = self._store.get(complaint_id)
-        if c and c.triage and c.status != ComplaintStatus.RESOLVED:
-            c.sla = compute_sla(c.received_at, c.triage.severity.value)
-        return c
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM complaints WHERE id = ?", (complaint_id,)).fetchone()
+        return self._row_to_complaint(row) if row else None
 
     def all(self) -> list[Complaint]:
-        out = []
-        for c in self._store.values():
-            if c.triage and c.status != ComplaintStatus.RESOLVED:
-                c.sla = compute_sla(c.received_at, c.triage.severity.value)
-            out.append(c)
-        return out
+        with self._connect() as conn:
+            rows = conn.execute("SELECT * FROM complaints").fetchall()
+        return [self._row_to_complaint(row) for row in rows]
 
-    def update_status(self, complaint_id: str, status: ComplaintStatus,
-                      agent_note: Optional[str] = None) -> Optional[Complaint]:
-        c = self._store.get(complaint_id)
+    def update_status(self, complaint_id: str, status: ComplaintStatus, agent_note: Optional[str] = None) -> Optional[Complaint]:
+        c = self.get(complaint_id)
         if not c:
             return None
         c.status = status
+        c.updated_at = datetime.utcnow()
         if agent_note:
             c.agent_note = agent_note
-            c.communication_history.append(HistoryMessage(
-                author=MessageAuthor.AGENT, author_name="Agent",
-                content=agent_note,
-            ))
+            c.communication_history.append(HistoryMessage(author=MessageAuthor.AGENT, author_name="Agent", content=agent_note))
+        c.communication_history.append(HistoryMessage(author=MessageAuthor.SYSTEM, author_name="System", content=f"Status changed to {status.value}."))
         if status == ComplaintStatus.RESOLVED:
             c.resolved_at = datetime.utcnow()
-            c.communication_history.append(HistoryMessage(
-                author=MessageAuthor.SYSTEM, author_name="System",
-                content="Complaint marked as resolved.",
-            ))
-        return c
+        return self.save(c)
 
     def add_message(self, complaint_id: str, msg: HistoryMessage) -> Optional[Complaint]:
-        c = self._store.get(complaint_id)
+        c = self.get(complaint_id)
         if not c:
             return None
         c.communication_history.append(msg)
-        return c
+        return self.save(c)
 
-    def escalate(self, complaint_id: str, record: EscalationRecord,
-                 to_level: EscalationLevel) -> Optional[Complaint]:
-        c = self._store.get(complaint_id)
+    def escalate(self, complaint_id: str, record: EscalationRecord, to_level: EscalationLevel) -> Optional[Complaint]:
+        c = self.get(complaint_id)
         if not c:
             return None
         c.escalation_history.append(record)
         c.escalation_level = to_level
         c.status = ComplaintStatus.ESCALATED
-        c.communication_history.append(HistoryMessage(
-            author=MessageAuthor.SYSTEM, author_name="System",
-            content=f"Escalated to {to_level.value} - {record.reason}",
-        ))
-        return c
+        c.updated_at = datetime.utcnow()
+        c.communication_history.append(HistoryMessage(author=MessageAuthor.SYSTEM, author_name="System", content=f"Escalated to {to_level.value}: {record.reason}"))
+        return self.save(c)
+
+    def mark_sla_breaches(self) -> int:
+        now = datetime.utcnow()
+        count = 0
+        for c in self.all():
+            if c.status == ComplaintStatus.RESOLVED or not c.sla:
+                continue
+            if c.sla.deadline < now and not c.sla_breached:
+                c.sla_breached = True
+                c.status = ComplaintStatus.ESCALATED
+                c.sla_status = SLAStatus.BREACHED
+                c.communication_history.append(HistoryMessage(author=MessageAuthor.SYSTEM, author_name="System", content="SLA breached. Complaint auto-escalated."))
+                self.save(c)
+                count += 1
+        return count
+
+    def get_sla_breached(self) -> list[Complaint]:
+        return [c for c in self.all() if c.sla_breached or c.sla_status == SLAStatus.BREACHED]
 
     def get_stats(self) -> DashboardStats:
         complaints = self.all()
-        total = len(complaints)
-        pending   = sum(1 for c in complaints if c.status == ComplaintStatus.PENDING)
-        resolved  = sum(1 for c in complaints if c.status == ComplaintStatus.RESOLVED)
-        escalated = sum(1 for c in complaints if c.status == ComplaintStatus.ESCALATED)
-        systemic_alerts = sum(1 for c in complaints if c.cluster and c.cluster.systemic_alert)
-        sla_breached = sum(1 for c in complaints if c.sla and c.sla.breached)
-        sla_at_risk  = sum(1 for c in complaints if c.sla and c.sla.status == SLAStatus.AT_RISK)
-
-        by_category: dict = defaultdict(int)
-        by_severity: dict = defaultdict(int)
-        by_channel:  dict = defaultdict(int)
-        resolution_times: list[float] = []
-
-        for c in complaints:
-            if c.triage:
-                by_category[c.triage.category.value] += 1
-                by_severity[c.triage.severity.value]  += 1
-            by_channel[c.channel.value] += 1
-            if c.resolved_at:
-                resolution_times.append((c.resolved_at - c.received_at).total_seconds() / 60)
-
-        avg_res = sum(resolution_times) / len(resolution_times) if resolution_times else 0.0
-
+        by_category = Counter(c.triage.category.value for c in complaints if c.triage)
+        by_severity = Counter(c.triage.severity.value for c in complaints if c.triage)
+        by_channel = Counter(c.channel.value for c in complaints)
+        today = datetime.utcnow().date()
+        res_times = [(c.resolved_at - c.received_at).total_seconds() / 60 for c in complaints if c.resolved_at]
         daily_trend = []
         for i in range(6, -1, -1):
             day = datetime.utcnow() - timedelta(days=i)
-            cnt = sum(1 for c in complaints if c.received_at.date() == day.date())
-            daily_trend.append({"date": day.strftime("%b %d"), "count": cnt})
-
+            daily_trend.append({"date": day.strftime("%b %d"), "count": sum(1 for c in complaints if c.received_at.date() == day.date())})
         return DashboardStats(
-            total=total, pending=pending, resolved=resolved,
-            escalated=escalated, systemic_alerts=systemic_alerts,
-            sla_breached=sla_breached, sla_at_risk=sla_at_risk,
-            by_category=dict(by_category), by_severity=dict(by_severity),
-            by_channel=dict(by_channel), daily_trend=daily_trend,
-            avg_resolution_minutes=round(avg_res, 2),
+            total=len(complaints),
+            pending=sum(c.status == ComplaintStatus.PENDING for c in complaints),
+            resolved=sum(c.status == ComplaintStatus.RESOLVED for c in complaints),
+            escalated=sum(c.status == ComplaintStatus.ESCALATED for c in complaints),
+            systemic_alerts=sum(bool(c.cluster and c.cluster.systemic_alert) for c in complaints),
+            sla_breached=sum(c.sla_status == SLAStatus.BREACHED for c in complaints),
+            sla_at_risk=sum(c.sla_status == SLAStatus.AT_RISK for c in complaints),
+            resolved_today=sum(bool(c.resolved_at and c.resolved_at.date() == today) for c in complaints),
+            by_category=dict(by_category),
+            by_severity=dict(by_severity),
+            by_channel=dict(by_channel),
+            daily_trend=daily_trend,
+            avg_resolution_minutes=round(sum(res_times) / len(res_times), 2) if res_times else 0.0,
         )
 
     def get_regulatory_report(self) -> RegulatoryReport:
         complaints = self.all()
+        resolved = [c for c in complaints if c.status == ComplaintStatus.RESOLVED]
+        res_hours = [(c.resolved_at - c.received_at).total_seconds() / 3600 for c in resolved if c.resolved_at]
         total = len(complaints)
-        resolved_list  = [c for c in complaints if c.status == ComplaintStatus.RESOLVED]
-        pending_list   = [c for c in complaints if c.status == ComplaintStatus.PENDING]
-        escalated_list = [c for c in complaints if c.status == ComplaintStatus.ESCALATED]
-        breached       = [c for c in complaints if c.sla and c.sla.breached]
-        reg_escalated  = [c for c in complaints if c.escalation_level == EscalationLevel.L4_REGULATORY]
-
-        res_hours = [
-            (c.resolved_at - c.received_at).total_seconds() / 3600
-            for c in resolved_list if c.resolved_at
-        ]
-        avg_res_h = sum(res_hours) / len(res_hours) if res_hours else 0
-
-        by_cat = defaultdict(int); by_ch = defaultdict(int); by_sev = defaultdict(int)
-        for c in complaints:
-            if c.triage:
-                by_cat[c.triage.category.value] += 1
-                by_sev[c.triage.severity.value]  += 1
-            by_ch[c.channel.value] += 1
-
-        critical_unresolved = sum(
-            1 for c in complaints
-            if c.triage and c.triage.severity.value == "critical"
-            and c.status != ComplaintStatus.RESOLVED
-        )
-
+        breached = sum(c.sla_status == SLAStatus.BREACHED for c in complaints)
         return RegulatoryReport(
-            generated_at=datetime.utcnow(), period="Last 30 Days",
-            total_complaints=total, resolved=len(resolved_list),
-            pending=len(pending_list), escalated=len(escalated_list),
-            resolution_rate_pct=round(len(resolved_list)/total*100 if total else 0, 1),
-            sla_breach_count=len(breached),
-            sla_compliance_pct=round((total-len(breached))/total*100 if total else 100, 1),
-            avg_resolution_hours=round(avg_res_h, 2),
-            by_category=dict(by_cat), by_channel=dict(by_ch), by_severity=dict(by_sev),
-            critical_unresolved=critical_unresolved,
-            escalated_to_regulatory=len(reg_escalated),
+            total_complaints=total,
+            resolved=len(resolved),
+            pending=sum(c.status == ComplaintStatus.PENDING for c in complaints),
+            escalated=sum(c.status == ComplaintStatus.ESCALATED for c in complaints),
+            resolution_rate_pct=round(len(resolved) / total * 100 if total else 0, 1),
+            sla_breach_count=breached,
+            sla_compliance_pct=round((total - breached) / total * 100 if total else 100, 1),
+            avg_resolution_hours=round(sum(res_hours) / len(res_hours), 2) if res_hours else 0.0,
+            by_category=dict(Counter(c.triage.category.value for c in complaints if c.triage)),
+            by_channel=dict(Counter(c.channel.value for c in complaints)),
+            by_severity=dict(Counter(c.triage.severity.value for c in complaints if c.triage)),
+            critical_unresolved=sum(c.triage and c.triage.severity == Severity.CRITICAL and c.status != ComplaintStatus.RESOLVED for c in complaints),
+            escalated_to_regulatory=sum(c.escalation_level == EscalationLevel.L4_REGULATORY for c in complaints),
         )
 
-    def seed_demo_data(self):
-        import uuid
-
-        DEMOS = [
-            dict(
-                raw="My UPI payment of Rs 5000 to Zomato failed but money was deducted from my account!",
-                channel=Channel.APP, cat=Category.UPI, sev=Severity.HIGH,
-                sent=Sentiment.FRUSTRATED, key="UPI payment failed but amount debited",
-                cluster_size=3, systemic=False, hrs=2,
-                status=ComplaintStatus.PENDING, lvl=EscalationLevel.L1_AGENT,
-                history=[
-                    ("customer","Customer","My UPI payment of Rs 5000 to Zomato failed but money was deducted!",False),
-                    ("system","System","Complaint received and auto-triaged by UniResolve AI.",False),
-                ],
-            ),
-            dict(
-                raw="Unable to login to net banking since morning. OTP not received on registered mobile.",
-                channel=Channel.EMAIL, cat=Category.NETBANKING, sev=Severity.HIGH,
-                sent=Sentiment.FRUSTRATED, key="Net banking login failure, OTP not received",
-                cluster_size=1, systemic=False, hrs=5,
-                status=ComplaintStatus.IN_REVIEW, lvl=EscalationLevel.L1_AGENT,
-                history=[
-                    ("customer","Customer","Unable to login to net banking. OTP not received.",False),
-                    ("system","System","Complaint auto-triaged. Assigned to L1 Agent.",False),
-                    ("agent","Agent Krisha","We have acknowledged your complaint. Our technical team is investigating the OTP delivery issue. We will update you within 2 hours.",False),
-                    ("customer","Customer","It has been 2 hours and still not working. Please resolve urgently!",False),
-                ],
-            ),
-            dict(
-                raw="Fraud transaction of Rs 12,000 detected on my debit card. I did not authorize this!",
-                channel=Channel.CALL, cat=Category.FRAUD, sev=Severity.CRITICAL,
-                sent=Sentiment.ANGRY, key="Unauthorized debit card transaction of Rs 12,000",
-                cluster_size=1, systemic=False, hrs=26,
-                status=ComplaintStatus.ESCALATED, lvl=EscalationLevel.L3_MANAGER,
-                history=[
-                    ("customer","Customer","Fraud transaction of Rs 12,000 on my debit card. Not authorized!",False),
-                    ("system","System","CRITICAL complaint. Card blocked automatically. Escalating to L2 Supervisor.",False),
-                    ("agent","Agent Janhavi","We have blocked your card immediately and initiated fraud investigation.",False),
-                    ("system","System","Escalated to L3 Manager - fraud amount exceeds Rs 10,000 threshold.",False),
-                    ("agent","Manager Rao","Fraud team notified. Provisional credit of Rs 12,000 will be issued within 24 hours pending investigation.",False),
-                ],
-                escalations=[
-                    ("L1 Agent","L2 Supervisor","CRITICAL fraud complaint auto-escalated","System"),
-                    ("L2 Supervisor","L3 Manager","Fraud amount > Rs 10,000 requires manager approval","Agent Janhavi"),
-                ],
-            ),
-            dict(
-                raw="UPI transfer failing again! Third time this week. Money debited but not credited to recipient.",
-                channel=Channel.SOCIAL, cat=Category.UPI, sev=Severity.CRITICAL,
-                sent=Sentiment.ANGRY, key="Repeated UPI failure - systemic outage detected",
-                cluster_size=7, systemic=True, hrs=0.5,
-                status=ComplaintStatus.PENDING, lvl=EscalationLevel.L2_SUPERVISOR,
-                history=[
-                    ("customer","Customer","UPI transfer failing AGAIN! Third time this week!",False),
-                    ("system","System","SYSTEMIC ALERT: 7 similar UPI complaints in cluster. Supervisor notified.",False),
-                ],
-                escalations=[
-                    ("L1 Agent","L2 Supervisor","Systemic UPI failure affecting multiple customers","System"),
-                ],
-            ),
-            dict(
-                raw="EMI for my home loan was auto-debited twice this month. Please refund immediately.",
-                channel=Channel.EMAIL, cat=Category.LOANS, sev=Severity.HIGH,
-                sent=Sentiment.ANGRY, key="Double EMI deduction for home loan",
-                cluster_size=1, systemic=False, hrs=30,
-                status=ComplaintStatus.RESOLVED, lvl=EscalationLevel.L1_AGENT,
-                history=[
-                    ("customer","Customer","EMI debited twice this month. Refund immediately please.",False),
-                    ("system","System","Complaint received and triaged.",False),
-                    ("agent","Agent Disha","We sincerely apologise. Duplicate deduction confirmed. Refund of Rs 18,450 has been initiated - will reflect within 24 hours.",False),
-                    ("customer","Customer","Thank you, I can see the credit now. Issue resolved.",False),
-                    ("system","System","Complaint resolved by Agent Disha. Resolution time: 4h 22m.",False),
-                ],
-            ),
-            dict(
-                raw="ATM card blocked after 3 wrong PIN attempts. Please unblock or issue new card.",
-                channel=Channel.BRANCH, cat=Category.ATM, sev=Severity.MEDIUM,
-                sent=Sentiment.NEUTRAL, key="ATM card blocked due to wrong PIN attempts",
-                cluster_size=1, systemic=False, hrs=15,
-                status=ComplaintStatus.RESOLVED, lvl=EscalationLevel.L1_AGENT,
-                history=[
-                    ("customer","Customer","ATM card blocked after wrong PIN. Need unblock or new card.",False),
-                    ("system","System","Complaint received via Branch channel.",False),
-                    ("agent","Agent Jhotika","Card unblock processed. New card dispatched to registered address - arrives in 5-7 working days.",False),
-                    ("system","System","Complaint resolved.",False),
-                ],
-            ),
-            dict(
-                raw="KYC update pending for 3 weeks. Documents submitted but still showing incomplete.",
-                channel=Channel.APP, cat=Category.KYC, sev=Severity.MEDIUM,
-                sent=Sentiment.FRUSTRATED, key="KYC documents submitted but not processed for 3 weeks",
-                cluster_size=1, systemic=False, hrs=72,
-                status=ComplaintStatus.PENDING, lvl=EscalationLevel.L1_AGENT,
-                history=[
-                    ("customer","Customer","KYC pending for 3 weeks. Documents submitted but showing incomplete.",False),
-                    ("system","System","Complaint auto-triaged. Assigned to KYC verification team.",False),
-                ],
-            ),
-        ]
-
-        LEVEL_MAP = {
-            "L1 Agent": EscalationLevel.L1_AGENT,
-            "L2 Supervisor": EscalationLevel.L2_SUPERVISOR,
-            "L3 Manager": EscalationLevel.L3_MANAGER,
-            "L4 Regulatory": EscalationLevel.L4_REGULATORY,
-        }
-
-        for d in DEMOS:
-            cid = str(uuid.uuid4())
-            received = datetime.utcnow() - timedelta(hours=d["hrs"])
-
-            history_msgs = [
-                HistoryMessage(
-                    author=MessageAuthor(h[0]), author_name=h[1],
-                    content=h[2], is_ai_draft=h[3],
-                    timestamp=received + timedelta(minutes=20*i),
-                )
-                for i, h in enumerate(d["history"])
-            ]
-
-            esc_records = []
-            for e in d.get("escalations", []):
-                esc_records.append(EscalationRecord(
-                    from_level=LEVEL_MAP[e[0]], to_level=LEVEL_MAP[e[1]],
-                    reason=e[2], escalated_by=e[3],
-                    escalated_at=received + timedelta(minutes=30),
-                ))
-
-            complaint = Complaint(
-                id=cid,
-                channel=d["channel"],
-                raw_text=d["raw"],
-                masked_text=d["raw"],
-                received_at=received,
-                triage=TriageResult(
-                    category=d["cat"], severity=d["sev"], sentiment=d["sent"],
-                    key_issue=d["key"],
-                    suggested_response=(
-                        f"Dear Customer, we have noted your concern regarding '{d['key']}'. "
-                        "Our team is reviewing this on priority and will respond within the SLA timeline."
-                    ),
-                    confidence=0.91,
-                ),
-                cluster=DuplicateCluster(
-                    cluster_id=str(uuid.uuid4()),
-                    is_duplicate=d["cluster_size"] > 1,
-                    cluster_size=d["cluster_size"],
-                    systemic_alert=d["systemic"],
-                ),
-                status=d["status"],
-                escalation_level=d["lvl"],
-                escalation_history=esc_records,
-                communication_history=history_msgs,
-                resolved_at=datetime.utcnow() - timedelta(hours=1) if d["status"] == ComplaintStatus.RESOLVED else None,
-            )
-            self.save(complaint)
+    def clear(self):
+        with self._connect() as conn:
+            conn.execute("DELETE FROM complaints")
+            conn.commit()
 
 
 _store: Optional[ComplaintStore] = None
+
 
 def get_store() -> ComplaintStore:
     global _store
     if _store is None:
         _store = ComplaintStore()
-        _store.seed_demo_data()
     return _store

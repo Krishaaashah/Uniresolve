@@ -1,113 +1,67 @@
-# UniResolve 🏦
+# UniResolve
 
+Unified Customer Complaint Communication Dashboard for Idea 2.0 Hackathon PS5.
 
----
+## Demo Setup
 
-## 🚀 Quick Start
-
-### Option 1: Docker (Recommended)
 ```bash
+cp backend/.env.example .env
 docker-compose up --build
 ```
-- **Frontend Dashboard:** http://localhost:3000
-- **Backend API Docs:** http://localhost:8000/docs
 
----
+- Frontend dashboard: http://localhost:3000
+- Backend API docs: http://localhost:8000/docs
+- Default demo API key: `dev-secret-key`
 
-### Option 2: Manual Setup
+Run seed data before demo:
 
-#### Backend
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+python -m app.seed
+cd ..
+docker-compose up --build
+```
+
+## Manual Backend
+
+```bash
+cd backend
 pip install -r requirements.txt
+python -m app.seed
 uvicorn app.main:app --reload --port 8000
 ```
 
-#### Frontend
-```bash
-cd frontend
-# Open index.html directly in browser, OR:
-npx serve .                     # serves at http://localhost:5000
-```
+## Security
 
----
+- API key protection on POST/action endpoints via `X-Api-Key`.
+- `POST /complaints/ingest` rate limited to 60 requests/minute/IP.
+- CORS origins restricted by `ALLOWED_ORIGINS`.
+- Complaint text validation, channel allowlist, PII masking, and `.env` ignored.
 
-## 🏗️ Architecture
+## PS5 Feature Checklist
 
-```
-┌─────────────────────────────────────────────────────────┐
-│              DATA INGESTION LAYER                        │
-│  Email / Social / Call / Branch / Web / App             │
-│  FastAPI Gateway → PII Masking (SpaCy NER) → Redis      │
-└───────────────────┬─────────────────────────────────────┘
-                    │
-┌───────────────────▼─────────────────────────────────────┐
-│              AI TRIAGE PIPELINE                          │
-│  FLAN-T5-Base → Category / Severity / Sentiment          │
-│  Key Issue Extraction → Draft Response Generation        │
-└───────────────────┬─────────────────────────────────────┘
-                    │
-┌───────────────────▼─────────────────────────────────────┐
-│           SEMANTIC CLUSTERING (FAISS)                    │
-│  Sentence-BERT → Vector Embeddings → FAISS Index         │
-│  Duplicate Detection → Systemic Alert if cluster ≥ 5    │
-└───────────────────┬─────────────────────────────────────┘
-                    │
-┌───────────────────▼─────────────────────────────────────┐
-│         AGENT DASHBOARD (Human-in-the-Loop)              │
-│  Next.js / HTML → View triage → Approve / Escalate       │
-│  AI draft shown as "suggestion" — agent validates        │
-└─────────────────────────────────────────────────────────┘
-```
+- [x] Unified omnichannel complaint ingestion.
+- [x] PII masking before AI processing.
+- [x] AI triage: category, severity, sentiment, key issue.
+- [x] Duplicate detection and systemic alerts.
+- [x] SLA tracking, breach detection, and escalation.
+- [x] Agent 360-degree dashboard with draft response workflow.
+- [x] SQLite persistence for demo reliability.
+- [x] Root cause analysis endpoint.
+- [x] Regulatory report JSON/CSV endpoint.
+- [x] Trend analysis endpoint with AI summary fallback.
 
-## 📂 Project Structure
-```
-uniresolve/
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   │   └── complaints.py      # REST endpoints
-│   │   ├── models/
-│   │   │   └── complaint.py       # Pydantic schemas
-│   │   ├── services/
-│   │   │   ├── pii_scrubber.py   # PII masking
-│   │   │   ├── triage.py         # FLAN-T5 NLP
-│   │   │   ├── clustering.py     # FAISS dedup
-│   │   │   └── store.py          # In-memory DB
-│   │   └── main.py               # FastAPI app
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/
-│   └── index.html                 # Agent dashboard
-└── docker-compose.yml
-```
-
-## 🔌 API Endpoints
+## Core Endpoints
 
 | Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/complaints/ingest` | Ingest new complaint |
-| GET | `/complaints` | List all (with filters) |
-| GET | `/complaints/{id}` | Complaint detail |
-| POST | `/complaints/{id}/action` | Approve/Escalate/Reject |
-| GET | `/complaints/stats` | Dashboard statistics |
-| GET | `/complaints/alerts` | Active systemic alerts |
-
-## 🛠️ Tech Stack
-- **Backend:** FastAPI + Uvicorn + Redis
-- **AI/NLP:** FLAN-T5-Base, Sentence-BERT (all-MiniLM-L6-v2)
-- **Vector DB:** FAISS (FlatIP index)
-- **PII Masking:** Regex + SpaCy NER
-- **Frontend:** HTML5 + Chart.js
-- **Container:** Docker + Docker Compose
-- **Database:** PostgreSQL (prod) / In-memory (demo)
-
-## 👥 Team Checkmates
-| Member | Expertise |
-|--------|-----------|
-| Krisha Shah | AI/ML, Python |
-| Janhavi Doijad | Full Stack & Database |
-| Jhotika Raja | Backend & DBMS |
-| Disha Gupta | Full Stack & Quantum Physics |
+|---|---|---|
+| POST | `/complaints/ingest` | Ingest and triage complaint |
+| GET | `/complaints` | List complaints |
+| GET | `/complaints/stats` | Dashboard metrics |
+| GET | `/complaints/alerts` | Systemic complaint alerts |
+| GET | `/complaints/sla-breached` | Breached SLA queue |
+| POST | `/complaints/{id}/action` | Approve, escalate, or reject |
+| POST | `/complaints/{id}/escalate` | Manual escalation |
+| GET | `/complaints/root-cause` | AI root cause analysis |
+| GET | `/complaints/reports/regulatory` | Regulatory report |
+| GET | `/complaints/trends` | Trend analysis |

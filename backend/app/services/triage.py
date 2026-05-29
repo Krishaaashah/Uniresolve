@@ -8,6 +8,7 @@ NLP Triage Service
 import re
 import json
 import logging
+import os
 from typing import Optional
 
 from app.models.complaint import (
@@ -18,12 +19,13 @@ logger = logging.getLogger(__name__)
 
 # ── Keyword maps for rule-based fallback ───────────────────────────────────────
 CATEGORY_KEYWORDS = {
-    Category.UPI:        ["upi", "payment", "transfer", "gpay", "phonepe", "neft", "rtgs", "imps", "transaction"],
-    Category.NETBANKING: ["net banking", "netbanking", "login", "password", "otp", "internet banking", "online banking"],
-    Category.LOANS:      ["loan", "emi", "interest", "repayment", "mortgage", "credit"],
-    Category.ATM:        ["atm", "card", "debit card", "credit card", "swipe", "cash withdrawal", "blocked card"],
-    Category.KYC:        ["kyc", "account", "aadhaar", "pan", "verification", "documents", "nominee"],
-    Category.FRAUD:      ["fraud", "scam", "unauthorized", "stolen", "phishing", "hack", "cheat"],
+    Category.MOBILE_BANKING: ["upi", "payment", "transfer", "gpay", "phonepe", "neft", "rtgs", "imps", "transaction", "mobile", "app"],
+    Category.ACCOUNT: ["net banking", "netbanking", "login", "password", "otp", "internet banking", "online banking", "kyc", "account", "aadhaar", "pan", "verification", "documents"],
+    Category.LOAN: ["loan", "emi", "interest", "repayment", "mortgage"],
+    Category.CREDIT_CARD: ["atm", "card", "debit card", "credit card", "swipe", "cash withdrawal", "blocked card"],
+    Category.INSURANCE: ["insurance", "claim", "premium", "policy"],
+    Category.INVESTMENT: ["investment", "mutual fund", "portfolio", "demat", "shares"],
+    Category.FRAUD: ["fraud", "scam", "unauthorized", "stolen", "phishing", "hack", "cheat"],
 }
 
 SEVERITY_KEYWORDS = {
@@ -40,11 +42,12 @@ SENTIMENT_KEYWORDS = {
 }
 
 RESPONSE_TEMPLATES = {
-    Category.UPI:        "Dear Customer, we acknowledge your concern regarding your UPI/payment transaction. Our team is investigating the issue on priority. You will receive an update within 24 hours. Reference ID: {ref_id}",
-    Category.NETBANKING: "Dear Customer, we understand you are facing difficulty accessing net banking services. Our technical team has been notified. Please try after 30 minutes or contact our 24x7 helpline at 1800-XXX-XXXX.",
-    Category.LOANS:      "Dear Customer, we have received your query regarding your loan/EMI. Our loans team will review your account and contact you within 2 business days.",
-    Category.ATM:        "Dear Customer, we are sorry to hear about your card/ATM issue. If your card is compromised, we strongly recommend calling our helpline immediately to block it. A replacement card will be dispatched within 5-7 working days.",
-    Category.KYC:        "Dear Customer, your KYC/account query has been registered. Please visit your nearest branch with original documents or upload them via our mobile app for faster processing.",
+    Category.MOBILE_BANKING: "Dear Customer, we acknowledge your concern regarding your digital banking transaction. Our team is investigating the issue on priority. You will receive an update within 24 hours. Reference ID: {ref_id}",
+    Category.ACCOUNT: "Dear Customer, your account service query has been registered. Our team will review the details and update you at the earliest.",
+    Category.LOAN: "Dear Customer, we have received your query regarding your loan/EMI. Our loans team will review your account and contact you within 2 business days.",
+    Category.CREDIT_CARD: "Dear Customer, we are sorry to hear about your card issue. If your card is compromised, please call our helpline immediately to block it while our team reviews your complaint.",
+    Category.INSURANCE: "Dear Customer, we have registered your insurance complaint and will route it to the concerned team for review.",
+    Category.INVESTMENT: "Dear Customer, we have received your investment-related concern and will have the specialist team review it.",
     Category.FRAUD:      "URGENT: Dear Customer, we take fraud reports extremely seriously. Your account has been flagged for immediate review. Please call our fraud helpline 1800-XXX-XXXX (24x7) immediately. Do NOT share any OTP or credentials.",
     Category.GENERAL:    "Dear Customer, thank you for reaching out to Union Bank. Your complaint has been registered and will be addressed by our support team within 48 hours.",
 }
@@ -80,18 +83,54 @@ def _rule_based_triage(text: str) -> TriageResult:
     key_issue = sentences[0].strip()[:120] if sentences else text[:120]
 
     import uuid
-    suggested_response = RESPONSE_TEMPLATES[category].format(
+    fallback_response = RESPONSE_TEMPLATES[category].format(
         ref_id=str(uuid.uuid4())[:8].upper()
     )
+    suggested_response = generate_draft_response(text, category, sentiment, severity, fallback_response)
 
     return TriageResult(
         category=category,
         severity=severity,
         sentiment=sentiment,
         key_issue=key_issue,
+        key_issues=[key_issue],
         suggested_response=suggested_response,
         confidence=0.75,
     )
+
+
+def generate_draft_response(complaint_text: str, category, sentiment, severity, fallback: str = "") -> str:
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        return fallback or RESPONSE_TEMPLATES.get(category, RESPONSE_TEMPLATES[Category.GENERAL]).format(ref_id="DEMO")
+    try:
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=180,
+            system=(
+                "You are a professional customer service agent for a financial institution. "
+                "Write empathetic, concise complaint responses. Do not make up policy details. Maximum 3 sentences."
+            ),
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Complaint: {complaint_text}\n"
+                        f"Category: {getattr(category, 'value', category)}\n"
+                        f"Sentiment: {getattr(sentiment, 'value', sentiment)}\n"
+                        f"Severity: {getattr(severity, 'value', severity)}"
+                    ),
+                }
+            ],
+        )
+        text = "".join(block.text for block in message.content if getattr(block, "type", "") == "text").strip()
+        return text or fallback
+    except Exception as e:
+        logger.warning(f"Claude draft generation failed: {e}. Using FLAN/rule fallback.")
+        return fallback
 
 
 class TriageService:
@@ -175,15 +214,17 @@ class TriageService:
             key_issue = self._extract_key_issue(masked_text)
 
             import uuid
-            suggested_response = RESPONSE_TEMPLATES.get(category, RESPONSE_TEMPLATES[Category.GENERAL]).format(
+            fallback_response = RESPONSE_TEMPLATES.get(category, RESPONSE_TEMPLATES[Category.GENERAL]).format(
                 ref_id=str(uuid.uuid4())[:8].upper()
             )
+            suggested_response = generate_draft_response(masked_text, category, sentiment, severity, fallback_response)
 
             return TriageResult(
                 category=category,
                 severity=severity,
                 sentiment=sentiment,
                 key_issue=key_issue,
+                key_issues=[key_issue],
                 suggested_response=suggested_response,
                 confidence=0.88,
             )

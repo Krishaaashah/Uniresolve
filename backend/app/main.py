@@ -3,9 +3,18 @@ UniResolve — Gen-AI Powered Unified Complaint Intelligence
 Main FastAPI application
 """
 
-from fastapi import FastAPI
+import asyncio
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
 from app.api.complaints import router as complaints_router
+from app.api.complaints import limiter
+from app.config import ALLOWED_ORIGINS
+from app.services.store import get_store
 
 app = FastAPI(
     title="UniResolve API",
@@ -15,15 +24,33 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+app.state.limiter = limiter
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded. Please retry after a minute."})
+
+app.add_middleware(SlowAPIMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # Tighten in production
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(complaints_router)
+
+
+async def _sla_monitor():
+    while True:
+        get_store().mark_sla_breaches()
+        await asyncio.sleep(300)
+
+
+@app.on_event("startup")
+async def startup_tasks():
+    asyncio.create_task(_sla_monitor())
 
 
 @app.get("/", tags=["health"])
