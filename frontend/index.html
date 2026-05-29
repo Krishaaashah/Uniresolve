@@ -115,6 +115,12 @@ main{flex:1;overflow-y:auto;padding:22px}
 .sla-label.on_track{color:var(--green)}
 .sla-label.at_risk{color:var(--orange)}
 .sla-label.breached{color:var(--red)}
+.sla-badge{font-size:11px;font-weight:800;border-radius:999px;padding:4px 9px;white-space:nowrap}
+.sla-badge.on_track{background:#f0fff4;color:var(--green);border:1px solid #9ae6b4}
+.sla-badge.at_risk{background:#fffaf0;color:var(--orange);border:1px solid #f6ad55}
+.sla-badge.breached{background:#fff5f5;color:var(--red);border:1px solid #feb2b2}
+.alert-banner{background:#fff7df;border:1px solid #f6ad55;color:#744210;padding:11px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer}
+.alert-banner button{border:none;background:transparent;color:#744210;font-weight:900;cursor:pointer;font-size:18px}
 
 /* BADGES */
 .badge-sys{background:var(--red);color:#fff;font-size:11px;
@@ -337,7 +343,7 @@ main{flex:1;overflow-y:auto;padding:22px}
     <div class="nav-sep"></div>
     <div class="nav-item" onclick="openIngest()"><svg class="icon"><use href="#i-plus"></use></svg> New Complaint</div>
   </nav>
-  <main id="main"><div class="loading"><div class="spinner"></div>Loading UniResolve...</div></main>
+  <main id="main"><div id="systemicBanner"></div><div id="viewRoot"><div class="loading"><div class="spinner"></div>Loading UniResolve...</div></div></main>
 </div>
 
 <!-- DETAIL OVERLAY -->
@@ -404,7 +410,7 @@ main{flex:1;overflow-y:auto;padding:22px}
           <option value="app">Mobile App</option>
           <option value="email">Email</option>
           <option value="social">Social Media</option>
-          <option value="call">Call Center</option>
+          <option value="ivr">IVR / Call Center</option>
           <option value="branch">Branch Visit</option>
           <option value="web">Web Portal</option>
         </select>
@@ -423,7 +429,8 @@ main{flex:1;overflow-y:auto;padding:22px}
 <script>
 // ────────────────────────────────────────────────────────────────────────────
 const API = 'http://localhost:8000';
-let ALL = [], STATS = {}, currentView = 'dashboard', activeFilter = 'all';
+const API_KEY = 'dev-secret-key';
+let ALL = [], STATS = {}, ALERTS = [], TREND = null, currentView = 'dashboard', activeFilter = 'all';
 let detailComplaint = null, escComplaintId = null;
 
 // clock
@@ -431,20 +438,28 @@ setInterval(()=>{
   document.getElementById('clock').textContent =
     new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
 },1000);
+setInterval(async()=>{ await loadAll(); render(); },60000);
 
 // ── API ──────────────────────────────────────────────────────────────────────
 async function apiFetch(path, opts){
-  const r = await fetch(API+path, opts);
+  opts = opts || {};
+  const method = (opts.method || 'GET').toUpperCase();
+  const headers = Object.assign({}, opts.headers || {});
+  if(method !== 'GET') headers['X-Api-Key'] = API_KEY;
+  const r = await fetch(API+path, Object.assign({}, opts, {headers}));
   if(!r.ok) throw new Error(r.status);
   return r.json();
 }
 async function loadAll(){
   try{ ALL = await apiFetch('/complaints'); }catch{ ALL = mockComplaints(); }
   try{ STATS = await apiFetch('/complaints/stats'); }catch{ STATS = mockStats(); }
+  try{ ALERTS = (await apiFetch('/complaints/alerts')).alerts || []; }catch{ ALERTS = ALL.filter(c=>c.cluster?.systemic_alert); }
+  try{ TREND = await apiFetch('/complaints/trends?group_by=category&window=7d'); }catch{ TREND = null; }
   document.getElementById('alertBadge').style.display =
-    STATS.systemic_alerts > 0 ? 'flex' : 'none';
+    ALERTS.length > 0 ? 'flex' : 'none';
   document.getElementById('slaBreachBadge').style.display =
     STATS.sla_breached > 0 ? 'flex' : 'none';
+  renderSystemicBanner();
 }
 
 // ── NAV ──────────────────────────────────────────────────────────────────────
@@ -464,6 +479,7 @@ function nav(v){
   render();
 }
 function render(){
+  renderSystemicBanner();
   if(currentView==='dashboard') renderDashboard();
   else if(currentView==='complaints') renderComplaints();
   else if(currentView==='sla') renderSLA();
@@ -472,12 +488,23 @@ function render(){
   else if(currentView==='regulatory') renderRegulatory();
 }
 
+function renderSystemicBanner(){
+  const el = document.getElementById('systemicBanner');
+  if(!el) return;
+  if(!ALERTS.length || localStorage.getItem('dismissSystemicAlert')==='1'){ el.innerHTML=''; return; }
+  const c = ALERTS[0], category = c.triage?.category || 'related complaints';
+  el.innerHTML = `<div class="alert-banner" onclick="nav('alerts')">
+    <span>Systemic alert: ${c.cluster?.cluster_size || ALERTS.length} similar complaints detected in ${category}. Possible root cause detected.</span>
+    <button onclick="event.stopPropagation();localStorage.setItem('dismissSystemicAlert','1');renderSystemicBanner()">x</button>
+  </div>`;
+}
+
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 const CHANNELS = {
   app:{label:'Mobile App',icon:'phone'},
   email:{label:'Email',icon:'mail'},
   social:{label:'Social',icon:'network'},
-  call:{label:'Call Center',icon:'phone'},
+  ivr:{label:'IVR / Call Center',icon:'phone'},
   branch:{label:'Branch',icon:'building'},
   web:{label:'Web Portal',icon:'globe'}
 };
@@ -502,12 +529,12 @@ function slaBar(c){
   if(!c.sla) return '';
   const pct = Math.min(100, c.sla.percent_used);
   const st = c.sla.status;
-  const label = st==='breached'?`Breached`:
-                st==='at_risk'?`${c.sla.hours_remaining.toFixed(1)}h left`:
+  const label = st==='breached'?`SLA BREACHED`:
+                st==='at_risk'?`At risk`:
                 `${c.sla.hours_remaining.toFixed(1)}h left`;
   return `<div class="sla-wrap">
     <div class="sla-track"><div class="sla-fill ${st}" style="width:${pct}%"></div></div>
-    <span class="sla-label ${st}">${label}</span>
+    <span class="sla-badge ${st}">${label}</span>
   </div>`;
 }
 
@@ -547,7 +574,7 @@ function complaintCard(c){
 // ── DASHBOARD ────────────────────────────────────────────────────────────────
 function renderDashboard(){
   const s = STATS;
-  document.getElementById('main').innerHTML = `
+  document.getElementById('viewRoot').innerHTML = `
     <div class="stats-grid">
       <div class="stat-card bl-blue"><div class="slabel">Total</div>
         <div class="sval" style="color:var(--blue)">${s.total||0}</div>
@@ -557,7 +584,7 @@ function renderDashboard(){
         <div class="ssub">Awaiting action</div></div>
       <div class="stat-card bl-green"><div class="slabel">Resolved</div>
         <div class="sval" style="color:var(--green)">${s.resolved||0}</div>
-        <div class="ssub">Avg ${s.avg_resolution_minutes||0}m FRT</div></div>
+        <div class="ssub">Today ${s.resolved_today||0}</div></div>
       <div class="stat-card bl-purple"><div class="slabel">Escalated</div>
         <div class="sval" style="color:var(--purple)">${s.escalated||0}</div>
         <div class="ssub">Needs senior</div></div>
@@ -575,6 +602,10 @@ function renderDashboard(){
         <div class="chart-wrap"><canvas id="catChart"></canvas></div></div>
       <div class="chart-card"><h3 class="with-icon">${icon('alert')} By Severity</h3>
         <div class="chart-wrap"><canvas id="sevChart"></canvas></div></div>
+    </div>
+    <div class="chart-card" style="margin-bottom:22px"><h3 class="with-icon">${icon('trend')} Category Sparkline</h3>
+      <div class="chart-wrap" style="height:90px"><canvas id="sparkChart"></canvas></div>
+      <div class="ssub" style="margin-top:8px">${TREND?.summary || 'Trend summary loading from analytics engine.'}</div>
     </div>
     <div class="sec-hdr">
       <h2 class="with-icon">${icon('clock')} Recent Complaints</h2>
@@ -611,6 +642,16 @@ function renderDashboard(){
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}
   });
+  if(document.getElementById('sparkChart')){
+    const trendData = TREND?.data || [];
+    const dayCounts = {};
+    trendData.forEach(d=>dayCounts[d.date]=(dayCounts[d.date]||0)+d.count);
+    new Chart(document.getElementById('sparkChart'),{
+      type:'line',
+      data:{labels:Object.keys(dayCounts),datasets:[{data:Object.values(dayCounts),borderColor:'#dd6b20',backgroundColor:'rgba(221,107,32,.12)',fill:true,tension:.35,pointRadius:2}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false,beginAtZero:true}}}
+    });
+  }
 }
 
 // ── COMPLAINTS LIST ──────────────────────────────────────────────────────────
@@ -618,7 +659,7 @@ function renderComplaints(){
   const filters = ['all','pending','in_review','escalated','resolved'];
   const filtered = activeFilter==='all'?ALL:ALL.filter(c=>c.status===activeFilter);
   const sorted = [...filtered].sort((a,b)=>new Date(b.received_at)-new Date(a.received_at));
-  document.getElementById('main').innerHTML = `
+  document.getElementById('viewRoot').innerHTML = `
     <div class="sec-hdr">
       <h2 class="with-icon">${icon('list')} All Complaints (${sorted.length})</h2>
       <button class="add-btn" onclick="openIngest()">${icon('plus','sm')} New</button>
@@ -639,7 +680,7 @@ function renderSLA(){
   const at_risk  = active.filter(c=>c.sla.status==='at_risk');
   const on_track = active.filter(c=>c.sla.status==='on_track');
 
-  document.getElementById('main').innerHTML = `
+  document.getElementById('viewRoot').innerHTML = `
     <div class="sec-hdr"><h2 class="with-icon">${icon('timer')} SLA Tracker</h2></div>
     <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:22px">
       <div class="stat-card bl-red">
@@ -677,7 +718,7 @@ function renderSLA(){
 // ── SYSTEMIC ALERTS ──────────────────────────────────────────────────────────
 function renderAlerts(){
   const alerts = ALL.filter(c=>c.cluster?.systemic_alert);
-  document.getElementById('main').innerHTML = `
+  document.getElementById('viewRoot').innerHTML = `
     <div class="sec-hdr"><h2 class="with-icon">${icon('alert')} Systemic Alerts</h2></div>
     ${alerts.length===0?'<div class="loading">No systemic alerts active.</div>':''}
     ${alerts.map(c=>`
@@ -705,7 +746,7 @@ function renderAlerts(){
 // ── TREND ANALYTICS ──────────────────────────────────────────────────────────
 function renderAnalytics(){
   const s = STATS;
-  document.getElementById('main').innerHTML = `
+  document.getElementById('viewRoot').innerHTML = `
     <div class="sec-hdr"><h2 class="with-icon">${icon('trend')} Trend Analysis</h2></div>
     <div class="chart-row" style="margin-bottom:22px">
       <div class="chart-card" style="grid-column:span 2">
@@ -782,12 +823,12 @@ function renderAnalytics(){
 
 // ── REGULATORY REPORT ────────────────────────────────────────────────────────
 async function renderRegulatory(){
-  document.getElementById('main').innerHTML = '<div class="loading"><div class="spinner"></div>Generating RBI report...</div>';
+  document.getElementById('viewRoot').innerHTML = '<div class="loading"><div class="spinner"></div>Generating RBI report...</div>';
   let rpt;
   try{ rpt = await apiFetch('/complaints/regulatory-report'); }
   catch{ rpt = mockRegReport(); }
 
-  document.getElementById('main').innerHTML = `
+  document.getElementById('viewRoot').innerHTML = `
     <div class="reg-header">
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
@@ -949,8 +990,11 @@ function renderOverview(c){
       </div>`:''
     }
     <div style="margin-bottom:14px">
-      <label style="font-size:11px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Original Complaint</label>
-      <div style="background:#f7fafc;border:1px solid var(--border);border-radius:8px;padding:11px;font-size:13.5px;line-height:1.6">${cleanText(c.raw_text||'')}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+        <label style="font-size:11px;color:var(--muted);text-transform:uppercase;display:block">Complaint Text</label>
+        <button class="esc-btn" style="padding:5px 9px;font-size:11px" onclick="toggleUnmasked('${c.id}')">${icon('key','sm')} Authorised view</button>
+      </div>
+      <div id="complaintTextView" data-masked="${cleanText(c.masked_text||'')}" data-raw="${cleanText(c.raw_text||'')}" style="background:#f7fafc;border:1px solid var(--border);border-radius:8px;padding:11px;font-size:13.5px;line-height:1.6">${cleanText(c.masked_text||'')}</div>
     </div>
     <div style="margin-bottom:14px">
       <label style="font-size:11px;color:var(--muted);text-transform:uppercase;display:block;margin-bottom:5px">Masked Text (PII Removed)</label>
@@ -962,8 +1006,11 @@ function renderOverview(c){
       </h3>
       <div style="font-size:11px;color:var(--muted);margin-bottom:4px">KEY ISSUE</div>
       <div class="with-icon" style="font-size:14px;font-weight:700;color:var(--blue);margin-bottom:12px">${icon('search','sm')} ${cleanText(t.key_issue||'-')}</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:5px">AI DRAFT RESPONSE</div>
-      <div class="draft">${cleanText(t.suggested_response||'-')}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px">
+        <div style="font-size:11px;color:var(--muted)">AI DRAFT RESPONSE</div>
+        <button class="esc-btn" style="padding:5px 9px;font-size:11px" onclick="copyDraft()">${icon('download','sm')} Copy draft</button>
+      </div>
+      <textarea id="draftText" class="draft" style="width:100%;min-height:95px;font-family:inherit;resize:vertical">${cleanText(t.suggested_response||'-')}</textarea>
       <div class="conf-bar">
         <span style="font-size:11px;color:var(--muted)">AI Confidence</span>
         <div class="conf-track"><div class="conf-fill" style="width:${Math.round((t.confidence||0)*100)}%"></div></div>
@@ -971,6 +1018,20 @@ function renderOverview(c){
       </div>
     </div>
   `;
+}
+
+function toggleUnmasked(){
+  const el = document.getElementById('complaintTextView');
+  if(!el) return;
+  const showingRaw = el.dataset.rawShown === '1';
+  el.textContent = showingRaw ? el.dataset.masked : el.dataset.raw;
+  el.dataset.rawShown = showingRaw ? '0' : '1';
+}
+
+function copyDraft(){
+  const txt = document.getElementById('draftText')?.value || '';
+  navigator.clipboard?.writeText(txt);
+  showToast('Draft copied.','success');
 }
 
 function renderHistoryTab(c){

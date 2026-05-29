@@ -4,6 +4,7 @@ __pycache__/
 dist/
 build/
 .env
+*.db
 venv/
 .venv/
 node_modules/
@@ -11,4 +12,4 @@ node_modules/
 *.log
 .DS_Store
 *.faiss
-models/
+/models/
