@@ -26,6 +26,9 @@ header{background:var(--blue);color:#fff;display:flex;align-items:center;
   padding:4px 12px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px}
 .pulse{animation:pulse 2s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+.live-btn{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:999px;padding:5px 11px;font-size:12px;font-weight:800;cursor:pointer;display:flex;align-items:center;gap:7px}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#a0aec0;display:inline-block}
+.live-btn.active .live-dot{background:var(--green);animation:pulse 1.2s infinite}
 .icon{width:16px;height:16px;display:inline-block;vertical-align:-3px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
 .icon.sm{width:14px;height:14px;vertical-align:-2px}
 .icon.lg{width:22px;height:22px}
@@ -121,6 +124,11 @@ main{flex:1;overflow-y:auto;padding:22px}
 .sla-badge.breached{background:#fff5f5;color:var(--red);border:1px solid #feb2b2}
 .alert-banner{background:#fff7df;border:1px solid #f6ad55;color:#744210;padding:11px 16px;border-radius:8px;margin-bottom:16px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer}
 .alert-banner button{border:none;background:transparent;color:#744210;font-weight:900;cursor:pointer;font-size:18px}
+.heatmap-table{width:100%;border-collapse:separate;border-spacing:4px;font-size:11px}
+.heatmap-table th{color:var(--muted);font-weight:700;text-align:center;padding:5px}
+.heatmap-table td{min-width:54px;height:34px;border-radius:6px;text-align:center;font-weight:800;border:1px solid rgba(0,0,0,.05)}
+.heatmap-legend{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:11px;color:var(--muted)}
+.heatmap-grad{height:8px;flex:1;border-radius:999px;background:linear-gradient(90deg,#38a169,#d69e2e,#e53e3e)}
 
 /* BADGES */
 .badge-sys{background:var(--red);color:#fff;font-size:11px;
@@ -328,6 +336,7 @@ main{flex:1;overflow-y:auto;padding:22px}
   <div class="hdr-right">
     <div class="sla-bar-hdr pulse" id="alertBadge" style="display:none"><svg class="icon sm"><use href="#i-alert"></use></svg> Systemic Alert Active</div>
     <div class="sla-bar-hdr" id="slaBreachBadge" style="display:none"><svg class="icon sm"><use href="#i-clock"></use></svg> SLA Breach</div>
+    <button class="live-btn" id="liveModeBtn" onclick="toggleLiveMode()"><span class="live-dot"></span><span>Live Demo</span></button>
     <span style="opacity:.7">Agent: Krisha Shah &nbsp;|&nbsp; <span id="clock"></span></span>
   </div>
 </header>
@@ -430,7 +439,43 @@ main{flex:1;overflow-y:auto;padding:22px}
 // ────────────────────────────────────────────────────────────────────────────
 const API = 'http://localhost:8000';
 const API_KEY = 'dev-secret-key';
+const DEMO_POOL = [
+  {channel:'app', text:'My UPI payment of Rs 3000 failed but amount was debited from my account.'},
+  {channel:'email', text:'Home loan EMI deducted twice this month from my account. Need immediate refund.'},
+  {channel:'social', text:'Credit card blocked without any notice! This is unacceptable. Urgent help needed.'},
+  {channel:'ivr', text:'OTP not received on registered mobile number for last 3 attempts. Cannot login.'},
+  {channel:'branch', text:'Branch staff refused to update my nominee details despite proper documentation.'},
+  {channel:'web', text:'Account statement download failing from web portal for the past 3 days.'},
+  {channel:'app', text:'Investment portfolio value not refreshing in the mobile app since yesterday.'},
+  {channel:'email', text:'Insurance claim pending for 25 days with no update or response from team.'},
+  {channel:'social', text:'ATM swallowed my card and did not dispense cash. Very frustrated!'},
+  {channel:'ivr', text:'IVR keeps disconnecting before connecting to human agent. Called 4 times today.'},
+  {channel:'web', text:'Fraud alert: suspicious transaction of Rs 8500 on my debit card I did not make.'},
+  {channel:'app', text:'Mobile banking fingerprint login stopped working after app update yesterday.'},
+  {channel:'email', text:'Mutual fund SIP not executed this month despite sufficient balance in account.'},
+  {channel:'branch', text:'Loan foreclosure letter not available at branch after requesting 2 weeks ago.'},
+  {channel:'social', text:'Net banking password reset link expired immediately. Cannot access account.'},
+  {channel:'web', text:'Credit card reward points vanished after last statement generation cycle.'},
+  {channel:'app', text:'UPI transfer shows pending for 6 hours. Beneficiary not received. Help urgently.'},
+  {channel:'email', text:'KYC documents submitted 3 weeks ago but account still showing verification pending.'},
+  {channel:'ivr', text:'Wrong EMI amount debited this month compared to my loan agreement schedule.'},
+  {channel:'branch', text:'Fixed deposit renewal not processed even after submitting physical form at branch.'},
+  {channel:'social', text:'Debit card declined at POS terminal three times. Balance is sufficient.'},
+  {channel:'app', text:'Cheque book request raised 15 days ago. Not received. No status update either.'},
+  {channel:'web', text:'Unable to add beneficiary in net banking. Getting error code 500 repeatedly.'},
+  {channel:'email', text:'Insurance premium auto-debit failed but policy showing lapsed. Please fix urgently.'},
+  {channel:'app', text:'International transaction blocked even though I activated travel mode in app.'},
+  {channel:'social', text:'FRAUD! Someone made 3 transactions of Rs 2000 each from my account tonight.'},
+  {channel:'branch', text:'Account closure request submitted 1 month ago. Still not processed at branch.'},
+  {channel:'web', text:'Loan statement not reflecting latest payment made 5 days ago on portal.'},
+  {channel:'ivr', text:'Recurring payment to utility company failed silently. Got disconnection notice.'},
+  {channel:'email', text:'Joint account holder addition rejected without explanation after 2 week wait.'},
+];
 let ALL = [], STATS = {}, ALERTS = [], TREND = null, currentView = 'dashboard', activeFilter = 'all';
+let SEARCH_QUERY = '';
+let liveMode = false;
+let liveInterval = null;
+let livePendingCount = 0;
 let detailComplaint = null, escComplaintId = null;
 
 // clock
@@ -460,6 +505,42 @@ async function loadAll(){
   document.getElementById('slaBreachBadge').style.display =
     STATS.sla_breached > 0 ? 'flex' : 'none';
   renderSystemicBanner();
+}
+
+async function toggleLiveMode() {
+  liveMode = !liveMode;
+  const btn = document.getElementById('liveModeBtn');
+  if (liveMode) {
+    btn.innerHTML = '<span class="live-dot"></span><span>Live: ON</span>';
+    btn.classList.add('active');
+    btn.style.borderColor = '#38a169';
+    btn.style.color = '#38a169';
+    liveInterval = setInterval(async () => {
+      const c = DEMO_POOL[Math.floor(Math.random() * DEMO_POOL.length)];
+      try {
+        await apiFetch('/complaints/ingest', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({channel: c.channel, raw_text: c.text})
+        });
+        livePendingCount++;
+        showToast(`Live: new ${c.channel} complaint ingested (${livePendingCount} total)`, 'success');
+      } catch(e) {
+        showToast('Live mode: backend unavailable', 'error');
+      }
+      await loadAll();
+      render();
+    }, 12000);
+    showToast('Live demo mode ON - complaints streaming every 12s', 'success');
+  } else {
+    clearInterval(liveInterval);
+    livePendingCount = 0;
+    btn.innerHTML = '<span class="live-dot"></span><span>Live Demo</span>';
+    btn.classList.remove('active');
+    btn.style.borderColor = '';
+    btn.style.color = '';
+    showToast('Live demo mode OFF', 'warn');
+  }
 }
 
 // ── NAV ──────────────────────────────────────────────────────────────────────
@@ -499,6 +580,33 @@ function renderSystemicBanner(){
   </div>`;
 }
 
+async function checkModelReady() {
+  try {
+    const h = await fetch(API + '/health').then(r => r.json());
+    const banner = document.getElementById('modelWarmBanner');
+    if (!h.model_ready) {
+      if (!banner) {
+        const b = document.createElement('div');
+        b.id = 'modelWarmBanner';
+        b.style.cssText = 'background:#ebf8ff;border:1px solid #90cdf4;border-radius:8px;padding:10px 16px;font-size:13px;margin-bottom:10px;color:#2c5282;font-weight:600;display:flex;align-items:center;gap:8px';
+        b.innerHTML = 'AI classification model warming up - using rule-based triage until ready. Response quality will improve in ~2 minutes.';
+        document.getElementById('systemicBanner').after(b);
+      }
+      setTimeout(checkModelReady, 8000);
+    } else {
+      if (banner) {
+        banner.style.background = '#f0fff4';
+        banner.style.borderColor = '#9ae6b4';
+        banner.style.color = '#276749';
+        banner.innerHTML = 'AI model ready - full triage active.';
+        setTimeout(() => banner.remove(), 4000);
+      }
+    }
+  } catch(e) {
+    setTimeout(checkModelReady, 10000);
+  }
+}
+
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 const CHANNELS = {
   app:{label:'Mobile App',icon:'phone'},
@@ -524,6 +632,55 @@ function fmtDt(iso){
   return new Date(iso).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
 }
 function slaColor(status){ return status==='breached'?'var(--red)':status==='at_risk'?'var(--orange)':'var(--green)'; }
+
+function buildHeatmap(complaints) {
+  const channels = ['app','email','social','ivr','branch','web'];
+  const categories = ['mobile_banking','account','loan','credit_card','insurance','investment','fraud','general'];
+  const scores = {angry:1, frustrated:0.7, neutral:0.3, satisfied:0};
+  const grid = {};
+  const counts = {};
+  complaints.forEach(c => {
+    if(!c.triage) return;
+    const key = `${c.channel}|${c.triage.category}`;
+    grid[key] = (grid[key] || 0) + (scores[c.triage.sentiment] ?? 0.3);
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  const avg = {};
+  Object.keys(grid).forEach(k => avg[k] = grid[k] / counts[k]);
+  return {channels, categories, avg, counts};
+}
+
+function heatmapColor(val) {
+  if(val === undefined) return 'var(--color-background-secondary, #f0f4f8)';
+  const r = Math.round(56 + (227-56)*val);
+  const g = Math.round(161 + (62-161)*val);
+  const b = Math.round(105 + (62-105)*val);
+  return `rgb(${r},${g},${b})`;
+}
+
+function renderHeatmap(targetId='heatmapContainer') {
+  const {channels, categories, avg, counts} = buildHeatmap(ALL);
+  const chanLabels = {app:'Mobile App', email:'Email', social:'Social', ivr:'IVR', branch:'Branch', web:'Web'};
+  const catLabels = {mobile_banking:'Mobile Banking', account:'Account', loan:'Loan', credit_card:'Credit Card', insurance:'Insurance', investment:'Investment', fraud:'Fraud', general:'General'};
+  let html = '<table class="heatmap-table"><thead><tr><th>Channel</th>';
+  categories.forEach(cat => { html += `<th>${catLabels[cat]||cat}</th>`; });
+  html += '</tr></thead><tbody>';
+  channels.forEach(ch => {
+    html += `<tr><th>${chanLabels[ch]||ch}</th>`;
+    categories.forEach(cat => {
+      const key = `${ch}|${cat}`;
+      const val = avg[key];
+      const cnt = counts[key] || 0;
+      const bg = heatmapColor(val);
+      const textColor = val !== undefined && val > 0.5 ? '#fff' : '#1a202c';
+      html += `<td title="${chanLabels[ch]||ch} / ${catLabels[cat]||cat}: ${cnt} complaints" style="background:${bg};color:${textColor}">${cnt||''}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table><div class="heatmap-legend"><span>Calm</span><div class="heatmap-grad"></div><span>Angry</span></div>';
+  const el = document.getElementById(targetId);
+  if(el) el.innerHTML = html;
+}
 
 function slaBar(c){
   if(!c.sla) return '';
@@ -607,6 +764,10 @@ function renderDashboard(){
       <div class="chart-wrap" style="height:90px"><canvas id="sparkChart"></canvas></div>
       <div class="ssub" style="margin-top:8px">${TREND?.summary || 'Trend summary loading from analytics engine.'}</div>
     </div>
+    <div class="chart-card" style="margin-bottom:22px">
+      <h3 class="with-icon">${icon('target')} Sentiment Heatmap</h3>
+      <div id="heatmapContainer2"></div>
+    </div>
     <div class="sec-hdr">
       <h2 class="with-icon">${icon('clock')} Recent Complaints</h2>
       <button class="add-btn" onclick="openIngest()">${icon('plus','sm')} New Complaint</button>
@@ -652,17 +813,28 @@ function renderDashboard(){
       options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false,beginAtZero:true}}}
     });
   }
+  renderHeatmap('heatmapContainer2');
 }
 
 // ── COMPLAINTS LIST ──────────────────────────────────────────────────────────
-function renderComplaints(){
+async function renderComplaints(){
   const filters = ['all','pending','in_review','escalated','resolved'];
-  const filtered = activeFilter==='all'?ALL:ALL.filter(c=>c.status===activeFilter);
+  let source = ALL;
+  if(SEARCH_QUERY){
+    try{ source = await apiFetch('/complaints?search=' + encodeURIComponent(SEARCH_QUERY)); }
+    catch{ source = ALL.filter(c=>matchesSearch(c, SEARCH_QUERY)); }
+  }
+  const filtered = activeFilter==='all'?source:source.filter(c=>c.status===activeFilter);
   const sorted = [...filtered].sort((a,b)=>new Date(b.received_at)-new Date(a.received_at));
   document.getElementById('viewRoot').innerHTML = `
     <div class="sec-hdr">
       <h2 class="with-icon">${icon('list')} All Complaints (${sorted.length})</h2>
       <button class="add-btn" onclick="openIngest()">${icon('plus','sm')} New</button>
+    </div>
+    <div style="margin-bottom:12px">
+      <input id="searchInput" value="${SEARCH_QUERY.replace(/"/g,'&quot;')}" oninput="setSearch(this.value)"
+        placeholder="Search by keyword, category or channel..."
+        style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:13.5px;outline:none">
     </div>
     <div class="filters" style="margin-bottom:16px">
       ${filters.map(f=>`<button class="fbtn ${activeFilter===f?'active':''}"
@@ -672,6 +844,16 @@ function renderComplaints(){
   `;
 }
 function setFilter(f){ activeFilter=f; renderComplaints(); }
+function setSearch(value){ SEARCH_QUERY = value.trim(); renderComplaints(); }
+
+function matchesSearch(c, query){
+  if(!query) return true;
+  const s = query.toLowerCase();
+  return (c.masked_text||'').toLowerCase().includes(s) ||
+    (c.triage && (c.triage.key_issue||'').toLowerCase().includes(s)) ||
+    (c.triage && (c.triage.category||'').toLowerCase().includes(s)) ||
+    (c.channel||'').toLowerCase().includes(s);
+}
 
 // ── SLA TRACKER ──────────────────────────────────────────────────────────────
 function renderSLA(){
@@ -784,6 +966,17 @@ function renderAnalytics(){
       </div>
     </div>
   `;
+  const heatmapHtml = `
+    <div class="chart-card" style="margin-top:22px">
+      <h3 class="with-icon">${icon('target')} Sentiment Heatmap - Channel x Category</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:10px">
+        Each cell = number of complaints. Colour = average anger level (green calm to red angry). Hover for detail.
+      </p>
+      <div id="heatmapContainer"></div>
+    </div>
+  `;
+  document.getElementById('viewRoot').innerHTML += heatmapHtml;
+  renderHeatmap();
   const td = s.daily_trend||[];
   new Chart(document.getElementById('trendBig'),{
     type:'bar',
@@ -1431,7 +1624,22 @@ function mockRegReport(){
 }
 
 // ── BOOT ─────────────────────────────────────────────────────────────────────
-(async()=>{ await loadAll(); render(); })();
+document.addEventListener('keydown', async e => {
+  if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+    e.preventDefault();
+    showToast('Reseeding demo data...', 'warn');
+    try {
+      await fetch(API + '/admin/seed', {method: 'POST'});
+      await loadAll();
+      render();
+      showToast('Demo data reset. 20 fresh complaints loaded.', 'success');
+    } catch {
+      showToast('Seed failed - check backend', 'error');
+    }
+  }
+});
+
+(async()=>{ await loadAll(); render(); checkModelReady(); })();
 </script>
 </body>
 </html>

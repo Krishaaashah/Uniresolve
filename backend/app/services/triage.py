@@ -9,6 +9,7 @@ import re
 import json
 import logging
 import os
+import threading
 from typing import Optional
 
 from app.models.complaint import (
@@ -142,7 +143,8 @@ class TriageService:
     def __init__(self):
         self.model = None
         self.tokenizer = None
-        self._load_model()
+        self._model_ready = False
+        threading.Thread(target=self._load_model, daemon=True).start()
 
     def _load_model(self):
         try:
@@ -151,6 +153,7 @@ class TriageService:
             model_name = "google/flan-t5-base"
             self.tokenizer = T5Tokenizer.from_pretrained(model_name)
             self.model = T5ForConditionalGeneration.from_pretrained(model_name)
+            self._model_ready = True
             logger.info("FLAN-T5-Base loaded successfully.")
         except Exception as e:
             logger.warning(f"Could not load FLAN-T5 model: {e}. Using rule-based fallback.")
@@ -177,7 +180,7 @@ class TriageService:
         return self.tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
 
     def triage(self, masked_text: str) -> TriageResult:
-        if self.model is None:
+        if not self._model_ready or self.model is None:
             return _rule_based_triage(masked_text)
 
         try:
