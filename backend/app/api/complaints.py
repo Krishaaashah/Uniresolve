@@ -265,6 +265,7 @@ async def list_complaints(
     channel: Optional[Channel] = Query(None),
     severity: Optional[Severity] = Query(None),
     category: Optional[Category] = Query(None),
+    search: Optional[str] = Query(None),
     limit: int = Query(100, le=500),
 ):
     complaints = get_store().all()
@@ -276,6 +277,15 @@ async def list_complaints(
         complaints = [c for c in complaints if c.triage and c.triage.severity == severity]
     if category:
         complaints = [c for c in complaints if c.triage and c.triage.category == category]
+    if search:
+        s = search.lower()
+        complaints = [
+            c for c in complaints if
+            s in (c.masked_text or "").lower() or
+            (bool(c.triage) and s in (c.triage.key_issue or "").lower()) or
+            (bool(c.triage) and s in c.triage.category.value.lower()) or
+            s in c.channel.value.lower()
+        ]
     complaints.sort(key=lambda c: c.received_at, reverse=True)
     return complaints[:limit]
 
@@ -286,6 +296,30 @@ async def get_complaint(complaint_id: str):
     if not c:
         raise HTTPException(status_code=404, detail="Complaint not found")
     return c
+
+
+@router.get("/{complaint_id}/explain", dependencies=[Depends(check_api_key)])
+async def explain_triage(complaint_id: str):
+    c = get_store().get(complaint_id)
+    if not c:
+        raise HTTPException(status_code=404, detail="Complaint not found")
+    if not c.triage:
+        return {"explanation": "No triage data available for this complaint.", "complaint_id": complaint_id}
+    explanation = _claude_text(
+        "You are an AI audit assistant for a banking complaint system. "
+        "Explain in exactly 2 sentences why this complaint was classified with the given "
+        "category, severity and sentiment. Reference specific words or phrases from the complaint text that drove the decision.",
+        f"Complaint: {c.masked_text}\nCategory: {c.triage.category.value}\n"
+        f"Severity: {c.triage.severity.value}\nSentiment: {c.triage.sentiment.value}\n"
+        f"Key issue: {c.triage.key_issue}",
+        f"Classified as {c.triage.category.value} / {c.triage.severity.value} based on complaint keywords and pattern matching."
+    )
+    return {"explanation": explanation, "complaint_id": complaint_id, "triage": {
+        "category": c.triage.category.value,
+        "severity": c.triage.severity.value,
+        "sentiment": c.triage.sentiment.value,
+        "confidence": c.triage.confidence
+    }}
 
 
 @router.post("/{complaint_id}/action", dependencies=[Depends(check_api_key)])

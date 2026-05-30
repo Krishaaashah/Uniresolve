@@ -15,6 +15,7 @@ from app.api.complaints import router as complaints_router
 from app.api.complaints import limiter
 from app.config import ALLOWED_ORIGINS
 from app.services.store import get_store
+from app.services.triage import get_triage_service
 
 app = FastAPI(
     title="UniResolve API",
@@ -65,4 +66,14 @@ async def root():
 
 @app.get("/health", tags=["health"])
 async def health():
-    return {"status": "healthy"}
+    return {"status": "healthy", "model_ready": get_triage_service()._model_ready}
+
+
+@app.post("/admin/seed")
+async def reseed_demo():
+    try:
+        from app.seed import main as seed_main
+        seed_main()
+        return {"seeded": True, "message": "Demo data reset successfully."}
+    except Exception as e:
+        return {"seeded": False, "error": str(e)}
